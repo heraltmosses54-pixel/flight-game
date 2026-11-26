@@ -1,0 +1,522 @@
+// The renderer: a pseudo-3D chase view drawn on a 2D canvas. The camera
+// sits behind the plane; the world is projected with a pinhole camera, the
+// ground is drawn as perspective slices, and objects, rings and clouds are
+// projected billboards sorted far to near.
+
+import { VIEW_W, VIEW_H, COLORS } from './config.js';
+
+const FOCAL = 560;
+const CX = VIEW_W / 2;
+const CY = VIEW_H * 0.52;
+
+// Slice depths for the ground: near to far on a geometric ladder.
+const SLICES = [];
+for (let d = 8; d < 5200; d *= 1.12) SLICES.push(d);
+SLICES.push(5200);
+
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+
+// Mix two hex colours by t (0 = a, 1 = b).
+function mixHex(a, b, t) {
+  const pa = parseInt(a.slice(1), 16);
+  const pb = parseInt(b.slice(1), 16);
+  const r = Math.round(((pa >> 16) & 255) + (((pb >> 16) & 255) - ((pa >> 16) & 255)) * t);
+  const g = Math.round(((pa >> 8) & 255) + (((pb >> 8) & 255) - ((pa >> 8) & 255)) * t);
+  const bl = Math.round((pa & 255) + ((pb & 255) - (pa & 255)) * t);
+  return `rgb(${r},${g},${bl})`;
+}
+
+const TERRAIN_COLOR = {
+  sea: COLORS.seaNear,
+  sand: COLORS.sand,
+  grass: COLORS.grass[0],
+  fieldA: COLORS.field[0],
+  fieldB: COLORS.field[1],
+  fieldC: COLORS.field[2],
+};
+
+// The camera basis from the plane's heading and pitch. The camera rolls
+// part-way with the plane (60%): the horizon tilts the right way when the
+// plane banks, and the plane itself is drawn with the rest of the bank.
+function cameraBasis(plane) {
+  const h = plane.heading;
+  const p = plane.pitch;
+  const f = [Math.sin(h) * Math.cos(p), Math.sin(p), Math.cos(h) * Math.cos(p)];
+  const r = [Math.cos(h), 0, -Math.sin(h)];
+  const u = [-Math.sin(h) * Math.sin(p), Math.cos(p), -Math.cos(h) * Math.sin(p)];
+  // Roll the camera's right/up vectors around the forward axis.
+  const a = plane.roll * 0.6;
+  const cosA = Math.cos(a);
+  const sinA = Math.sin(a);
+  const r2 = [r[0] * cosA - u[0] * sinA, r[1] * cosA - u[1] * sinA, r[2] * cosA - u[2] * sinA];
+  const u2 = [u[0] * cosA + r[0] * sinA, u[1] * cosA + r[1] * sinA, u[2] * cosA + r[2] * sinA];
+  // On the ground the camera pulls back and up a little, so the strip and
+  // the plane both read; it settles to the chase position as speed builds.
+  const slow = Math.max(0, 20 - plane.speed);
+  const dist = 13 + slow * 0.22;
+  const height = 4.2 + slow * 0.18;
+  const cam = [
+    plane.x - f[0] * dist,
+    plane.y - f[1] * dist + height,
+    plane.z - f[2] * dist,
+  ];
+  return { f, r: r2, u: u2, cam };
+}
+
+// Project a world point to the screen. Returns null when behind the camera.
+function project(basis, q) {
+  const dx = q[0] - basis.cam[0];
+  const dy = q[1] - basis.cam[1];
+  const dz = q[2] - basis.cam[2];
+  const cz = dx * basis.f[0] + dy * basis.f[1] + dz * basis.f[2];
+  if (cz < 1.5) return null;
+  const cx = dx * basis.r[0] + dy * basis.r[1] + dz * basis.r[2];
+  const cy = dx * basis.u[0] + dy * basis.u[1] + dz * basis.u[2];
+  return { x: CX + (cx / cz) * FOCAL, y: CY - (cy / cz) * FOCAL, d: cz };
+}
+
+function quad(ctx, a, b, c, d, fill) {
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(c.x, c.y);
+  ctx.lineTo(d.x, d.y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawSky(ctx, basis, plane, time, storm) {
+  const horizonY = CY - Math.tan(plane.pitch) * FOCAL;
+  // The sky and the haze are drawn in a frame tilted with the camera's
+  // roll, so the horizon band follows the tilted ground horizon. The sun
+  // is a projected point and is drawn unrotated below.
+  const a = plane.roll * 0.6;
+  ctx.save();
+  ctx.translate(CX, horizonY);
+  ctx.rotate(-a);
+  ctx.translate(-CX, -horizonY);
+  const g = ctx.createLinearGradient(0, -320, 0, VIEW_H + 320);
+  if (storm) {
+    g.addColorStop(0, '#3d4a63');
+    g.addColorStop(0.45, '#6d7d99');
+    g.addColorStop(0.62, '#c9b48a');
+  } else {
+    g.addColorStop(0, COLORS.skyTop);
+    g.addColorStop(0.45, COLORS.skyMid);
+    g.addColorStop(0.62, COLORS.skyLow);
+  }
+  g.addColorStop(1, COLORS.seaFar);
+  ctx.fillStyle = g;
+  // Drawn oversize: the world frame rolls with the plane, and the sky
+  // must still cover the corners.
+  ctx.fillRect(-320, -320, VIEW_W + 640, VIEW_H + 640);
+
+  // Haze band hugging the horizon.
+  const haze = ctx.createLinearGradient(0, horizonY - 70, 0, horizonY + 30);
+  haze.addColorStop(0, 'rgba(246, 207, 143, 0)');
+  haze.addColorStop(0.6, COLORS.haze);
+  haze.addColorStop(1, 'rgba(246, 207, 143, 0)');
+  ctx.fillStyle = haze;
+  ctx.fillRect(-320, horizonY - 70, VIEW_W + 640, 100);
+  ctx.restore();
+
+  // The sun: a fixed direction in the world, projected like anything else.
+  const sunDir = [Math.sin(-0.7), 0.34, Math.cos(-0.7)];
+  const sunPoint = [
+    basis.cam[0] + sunDir[0] * 8000,
+    basis.cam[1] + sunDir[1] * 8000,
+    basis.cam[2] + sunDir[2] * 8000,
+  ];
+  const s = project(basis, sunPoint);
+  if (s) {
+    const glow = ctx.createRadialGradient(s.x, s.y, 4, s.x, s.y, 130);
+    glow.addColorStop(0, COLORS.sunGlow);
+    glow.addColorStop(1, 'rgba(255, 236, 170, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(s.x - 130, s.y - 130, 260, 260);
+    ctx.fillStyle = COLORS.sun;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 26, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return horizonY;
+}
+
+function drawRidges(ctx, horizonY, world, roll) {
+  const a = roll * 0.6;
+  ctx.save();
+  ctx.translate(CX, horizonY);
+  ctx.rotate(-a);
+  ctx.translate(-CX, -horizonY);
+  const drawRidge = (ridge, base, color) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(-320, VIEW_H + 320);
+    const n = ridge.length - 1;
+    for (let i = 0; i <= n; i++) {
+      const x = (i / n) * (VIEW_W + 640) - 320;
+      ctx.lineTo(x, horizonY - Math.pow(ridge[i], 1.6) * base);
+    }
+    ctx.lineTo(VIEW_W + 320, VIEW_H + 320);
+    ctx.closePath();
+    ctx.fill();
+  };
+  drawRidge(world.ridgeFar, 110, COLORS.mountainFar);
+  drawRidge(world.ridgeNear, 70, COLORS.mountainNear);
+  ctx.restore();
+}
+
+// The ground as perspective slices: each slice is a band across the view,
+// split into lateral patches coloured by what the terrain is there.
+function drawGround(ctx, basis, world) {
+  const halfTan = (VIEW_W / 2 / FOCAL) * 1.06;
+  for (let i = 0; i < SLICES.length - 1; i++) {
+    const d0 = SLICES[i];
+    const d1 = SLICES[i + 1];
+    const hw0 = d0 * halfTan;
+    const hw1 = d1 * halfTan;
+    const segs = 10;
+    for (let s = 0; s < segs; s++) {
+      const t0 = -1 + (2 * s) / segs;
+      const t1 = -1 + (2 * (s + 1)) / segs;
+      // World points of the four corners of this ground patch.
+      const corner = (d, t) => {
+        const x = basis.cam[0] + basis.f[0] * d + basis.r[0] * (t * d * halfTan);
+        const z = basis.cam[2] + basis.f[2] * d + basis.r[2] * (t * d * halfTan);
+        const y = world.groundHeight(x, z);
+        return [x, y, z];
+      };
+      const a = project(basis, corner(d0, t0));
+      const b = project(basis, corner(d0, t1));
+      const c = project(basis, corner(d1, t1));
+      const d = project(basis, corner(d1, t0));
+      if (!a || !b || !c || !d) continue;
+      const mx = basis.cam[0] + basis.f[0] * ((d0 + d1) / 2);
+      const mz = basis.cam[2] + basis.f[2] * ((d0 + d1) / 2);
+      const kind = world.groundKind(mx, mz);
+      let color = TERRAIN_COLOR[kind] || COLORS.grass[1];
+      if (kind === 'grass') {
+        // Patchwork fields: pick a green by the patch's position.
+        const gi = Math.abs(Math.floor(mx / 260) + Math.floor(mz / 260) * 3) % 4;
+        color = COLORS.grass[gi];
+      }
+      const hazeAmt = clamp(((d0 + d1) / 2 / 3400), 0, 0.72);
+      quad(ctx, a, b, c, d, mixHex(color, '#cfe3ee', hazeAmt));
+    }
+  }
+}
+
+// A runway: a flat grey band with a dashed centreline and threshold bars.
+function drawRunway(ctx, basis, strip) {
+  const z0 = strip.z - 450;
+  const z1 = strip.z + 450;
+  const top = [];
+  const bottom = [];
+  for (let z = z0; z <= z1; z += 30) {
+    const l = project(basis, [strip.x - 16, 2.2, z]);
+    const r = project(basis, [strip.x + 16, 2.2, z]);
+    if (l && r) {
+      top.push(l);
+      bottom.push(r);
+    }
+  }
+  if (top.length < 2) return;
+  ctx.fillStyle = COLORS.runway;
+  ctx.beginPath();
+  ctx.moveTo(top[0].x, top[0].y);
+  for (const p of top) ctx.lineTo(p.x, p.y);
+  for (let i = bottom.length - 1; i >= 0; i--) ctx.lineTo(bottom[i].x, bottom[i].y);
+  ctx.closePath();
+  ctx.fill();
+  // Centreline dashes.
+  ctx.fillStyle = COLORS.runwayEdge;
+  for (let z = z0 + 40; z < z1 - 20; z += 80) {
+    const a = project(basis, [strip.x - 1.2, 2.4, z]);
+    const b = project(basis, [strip.x + 1.2, 2.4, z + 26]);
+    const c = project(basis, [strip.x + 1.2, 2.4, z]);
+    const d2 = project(basis, [strip.x - 1.2, 2.4, z + 26]);
+    if (a && b && c && d2) quad(ctx, a, b, c, d2, COLORS.runwayEdge);
+  }
+  // Threshold bars at each end.
+  for (const zt of [z0 + 12, z1 - 12]) {
+    for (let k = -2; k <= 2; k++) {
+      const a = project(basis, [strip.x + k * 6 - 2, 2.4, zt]);
+      const b = project(basis, [strip.x + k * 6 + 2, 2.4, zt + 18]);
+      const c = project(basis, [strip.x + k * 6 + 2, 2.4, zt]);
+      const d2 = project(basis, [strip.x + k * 6 - 2, 2.4, zt + 18]);
+      if (a && b && c && d2) quad(ctx, a, b, c, d2, COLORS.runwayEdge);
+    }
+  }
+}
+
+// One billboard object: a tree, a house, the lighthouse, a hangar, a windsock.
+function drawObject(ctx, basis, o, time, wind) {
+  const p = project(basis, [o.x, o.y, o.z]);
+  if (!p) return;
+  const s = (o.s * FOCAL) / p.d;
+  if (s < 1.5) return;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  if (o.kind === 'tree') {
+    ctx.fillStyle = '#5d4a2f';
+    ctx.fillRect(-s * 0.06, -s * 0.35, s * 0.12, s * 0.35);
+    ctx.fillStyle = '#3f7a34';
+    ctx.beginPath();
+    ctx.moveTo(0, -s);
+    ctx.lineTo(-s * 0.5, -s * 0.25);
+    ctx.lineTo(s * 0.5, -s * 0.25);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#4c8a3e';
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.8);
+    ctx.lineTo(-s * 0.38, -s * 0.15);
+    ctx.lineTo(s * 0.38, -s * 0.15);
+    ctx.closePath();
+    ctx.fill();
+  } else if (o.kind === 'house') {
+    ctx.fillStyle = '#e8dcc0';
+    ctx.fillRect(-s * 0.5, -s * 0.55, s, s * 0.55);
+    ctx.fillStyle = '#b0503c';
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.58, -s * 0.5);
+    ctx.lineTo(0, -s * 0.95);
+    ctx.lineTo(s * 0.58, -s * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#2c2c34';
+    ctx.fillRect(-s * 0.12, -s * 0.25, s * 0.24, s * 0.25);
+  } else if (o.kind === 'lighthouse') {
+    ctx.fillStyle = '#f2ead8';
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.16, 0);
+    ctx.lineTo(-s * 0.1, -s);
+    ctx.lineTo(s * 0.1, -s);
+    ctx.lineTo(s * 0.16, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#c0392b';
+    ctx.fillRect(-s * 0.13, -s * 0.62, s * 0.26, s * 0.16);
+    ctx.fillRect(-s * 0.11, -s * 0.3, s * 0.22, s * 0.14);
+    ctx.fillStyle = '#2c2c34';
+    ctx.beginPath();
+    ctx.arc(0, -s * 1.04, s * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    const glow = ctx.createRadialGradient(0, -s * 1.04, 1, 0, -s * 1.04, s * 0.5);
+    glow.addColorStop(0, 'rgba(255, 240, 170, 0.8)');
+    glow.addColorStop(1, 'rgba(255, 240, 170, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, -s * 1.04, s * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (o.kind === 'hangar') {
+    ctx.fillStyle = '#8a94a6';
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.6, 0);
+    ctx.lineTo(-s * 0.6, -s * 0.3);
+    ctx.arc(0, -s * 0.3, s * 0.6, Math.PI, 0);
+    ctx.lineTo(s * 0.6, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#5d6a7d';
+    ctx.fillRect(-s * 0.45, -s * 0.3, s * 0.9, s * 0.3);
+  } else if (o.kind === 'windsock') {
+    ctx.strokeStyle = '#3a3a44';
+    ctx.lineWidth = Math.max(1, s * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -s);
+    ctx.stroke();
+    const sway = Math.sin(time * 1.4 + o.x) * 0.2 + (wind > 0 ? 0.5 : 0.2);
+    ctx.fillStyle = '#e8722a';
+    ctx.beginPath();
+    ctx.moveTo(0, -s);
+    ctx.lineTo(s * 0.7 * Math.cos(sway), -s + s * 0.28 * Math.sin(sway) + s * 0.1);
+    ctx.lineTo(0, -s + s * 0.22);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// A target ring: a glowing torus the plane flies through.
+function drawRing(ctx, basis, ring, state, time) {
+  const p = project(basis, [ring.x, ring.y, ring.z]);
+  if (!p) return;
+  const rx = (ring.r * FOCAL) / p.d;
+  if (rx < 2) return;
+  const color = state === 'next' ? COLORS.ringNext : state === 'done' ? COLORS.ringDone : COLORS.ringLater;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  if (state === 'next') {
+    const pulse = 0.55 + 0.3 * Math.sin(time * 4);
+    ctx.strokeStyle = `rgba(255, 181, 46, ${pulse})`;
+    ctx.lineWidth = Math.max(3, rx * 0.3);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx * 1.25, rx * 1.15, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(2, rx * 0.14);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, rx, rx * 0.92, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, rx * 0.86, rx * 0.79, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// A cloud: a cluster of soft ellipses.
+function drawCloud(ctx, basis, c) {
+  const p = project(basis, [c.x, c.y, c.z]);
+  if (!p) return;
+  const s = (c.s * FOCAL) / p.d;
+  if (s < 3) return;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+  ctx.beginPath();
+  ctx.ellipse(p.x - s * 0.4, p.y + s * 0.06, s * 0.5, s * 0.22, 0, 0, Math.PI * 2);
+  ctx.ellipse(p.x, p.y - s * 0.08, s * 0.62, s * 0.26, 0, 0, Math.PI * 2);
+  ctx.ellipse(p.x + s * 0.45, p.y + s * 0.08, s * 0.45, s * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// The plane itself, drawn in the rotated world frame at a fixed screen spot.
+function drawPlane(ctx, plane, time, groundY) {
+  const px = CX;
+  const py = VIEW_H * 0.60;
+  const bank = plane.roll;
+  ctx.save();
+  ctx.translate(px, py);
+  // The camera already rolls 60% with the plane; the plane takes the
+  // remaining 40% here, so it banks against a correctly tilted horizon.
+  ctx.rotate(bank * 0.4);
+  // Tail.
+  ctx.fillStyle = COLORS.planeRed;
+  ctx.beginPath();
+  ctx.moveTo(-14, 26);
+  ctx.lineTo(-34, 52);
+  ctx.lineTo(-8, 46);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(14, 26);
+  ctx.lineTo(34, 52);
+  ctx.lineTo(8, 46);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = COLORS.planeDark;
+  ctx.beginPath();
+  ctx.moveTo(0, 30);
+  ctx.lineTo(-6, 62);
+  ctx.lineTo(6, 62);
+  ctx.closePath();
+  ctx.fill();
+  // Main wings.
+  ctx.fillStyle = COLORS.planeRed;
+  ctx.beginPath();
+  ctx.moveTo(-12, -6);
+  ctx.lineTo(-132, 26);
+  ctx.lineTo(-126, 40);
+  ctx.lineTo(-10, 16);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(12, -6);
+  ctx.lineTo(132, 26);
+  ctx.lineTo(126, 40);
+  ctx.lineTo(10, 16);
+  ctx.closePath();
+  ctx.fill();
+  // Fuselage.
+  ctx.fillStyle = COLORS.planeCream;
+  ctx.beginPath();
+  ctx.ellipse(0, 8, 15, 52, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = COLORS.planeRed;
+  ctx.fillRect(-15, 2, 30, 7);
+  // Cockpit window.
+  ctx.fillStyle = '#1d3a52';
+  ctx.beginPath();
+  ctx.ellipse(0, -22, 10, 15, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Spinning propeller.
+  const spin = time * 28;
+  ctx.save();
+  ctx.translate(0, -58);
+  ctx.rotate(spin);
+  ctx.fillStyle = 'rgba(40, 40, 48, 0.35)';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 34, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(40, 40, 48, 0.75)';
+  ctx.fillRect(-2, -30, 4, 60);
+  ctx.restore();
+  ctx.fillStyle = COLORS.planeDark;
+  ctx.beginPath();
+  ctx.arc(0, -58, 5, 0, Math.PI * 2);
+  ctx.fill();
+  // Registration on the tail.
+  ctx.fillStyle = COLORS.planeCream;
+  ctx.font = 'bold 9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('SP-07', 0, 56);
+  ctx.restore();
+  return { px, py };
+}
+
+// Rain streaks for the storm mission.
+function drawRain(ctx, time) {
+  ctx.strokeStyle = 'rgba(200, 215, 235, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i < 90; i++) {
+    const x = ((i * 137 + time * 620) % (VIEW_W + 40)) - 20;
+    const y = ((i * 211 + time * 900) % (VIEW_H + 40)) - 20;
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - 5, y + 16);
+  }
+  ctx.stroke();
+}
+
+// The whole scene for one frame. The camera basis already carries the
+// roll, so the world is drawn straight: no extra screen rotation.
+export function drawScene(ctx, game, world, time) {
+  const plane = game.plane;
+  const storm = game.mission && game.mission.id === 'storm';
+  const basis = cameraBasis(plane);
+  ctx.save();
+
+  const horizonY = drawSky(ctx, basis, plane, time, storm);
+  drawRidges(ctx, horizonY, world, plane.roll);
+  drawGround(ctx, basis, world);
+  for (const strip of game.strips) drawRunway(ctx, basis, strip);
+
+  // Billboards far to near: clouds, objects, rings.
+  const drawables = [];
+  for (const c of world.clouds) drawables.push({ d: c.z - plane.z, fn: () => drawCloud(ctx, basis, c) });
+  for (const o of world.objects) drawables.push({ d: o.z - plane.z, fn: () => drawObject(ctx, basis, o, time, game.wind) });
+  game.rings.forEach((ring, i) => {
+    const state = i < game.ringIndex ? 'done' : i === game.ringIndex ? 'next' : 'later';
+    drawables.push({ d: ring.z - plane.z, fn: () => drawRing(ctx, basis, ring, state, time) });
+  });
+  drawables.sort((a, b) => b.d - a.d);
+  for (const item of drawables) item.fn();
+
+  // The plane's shadow on the ground below it.
+  const gy = world.groundHeight(plane.x, plane.z);
+  const shadow = project(basis, [plane.x, gy + 0.5, plane.z]);
+  if (shadow && plane.y - gy < 220) {
+    const s = clamp(46 - (plane.y - gy) * 0.14, 8, 46);
+    ctx.fillStyle = `rgba(20, 30, 20, ${clamp(0.4 - (plane.y - gy) * 0.0012, 0.08, 0.4)})`;
+    ctx.beginPath();
+    ctx.ellipse(shadow.x, shadow.y, s, s * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  drawPlane(ctx, plane, time, gy);
+  if (storm) drawRain(ctx, time);
+  ctx.restore();
+}
