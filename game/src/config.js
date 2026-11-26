@@ -124,6 +124,7 @@ export const MISSIONS = [
     strip: { z: 6000, x: 0 },
     wind: 0,
     timeLimit: 0,
+    par: 4500,
   },
   {
     id: 'hop',
@@ -138,6 +139,7 @@ export const MISSIONS = [
     strip: { z: 10000, x: 0 },
     wind: 1.5,
     timeLimit: 0,
+    par: 5000,
   },
   {
     id: 'storm',
@@ -155,6 +157,7 @@ export const MISSIONS = [
     strip: { z: 8400, x: 0 },
     wind: 6,
     timeLimit: 240,
+    par: 6000,
   },
   {
     id: 'supply',
@@ -170,8 +173,29 @@ export const MISSIONS = [
     strip: { z: 10000, x: 0 },
     wind: 1,
     timeLimit: 0,
+    par: 5500,
   },
 ];
+
+// Career upgrades, bought with gold on the menu (keys 6, 7, 8).
+// Each has 3 levels; costs[level] is the price of the next level.
+export const UPGRADES = {
+  tank: {
+    name: 'Fuel Tank',
+    desc: 'Bigger tank — +25 fuel per level.',
+    costs: [150, 350, 600],
+  },
+  climb: {
+    name: 'Climb Kit',
+    desc: 'Stronger pitch — +10% per level.',
+    costs: [150, 350, 600],
+  },
+  hull: {
+    name: 'Tough Hull',
+    desc: '25% less damage per hard knock.',
+    costs: [150, 350, 600],
+  },
+};
 
 // Airfields: home strip at z 0, Coral Strip at 6000, Far Strip at 10000, Storm Strip at 8400.
 export const STRIPS = [

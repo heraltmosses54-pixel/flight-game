@@ -3,7 +3,7 @@
 // and the menu, briefing and end screens. Everything is drawn on the same
 // canvas, so the screenshots show exactly what the player sees.
 
-import { VIEW_W, VIEW_H, COLORS } from './config.js';
+import { VIEW_W, VIEW_H, COLORS, UPGRADES, MISSIONS } from './config.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -315,7 +315,7 @@ export function drawHud(ctx, game, time) {
 
     // Right side: fuel, damage, throttle.
     const rx = VIEW_W - 196;
-    barGauge(ctx, rx, 66, 150, 'FUEL', p.fuel / 100, COLORS.hudGood, 0.25);
+    barGauge(ctx, rx, 66, 150, 'FUEL', p.fuel / (game.fuelMax || 100), COLORS.hudGood, 0.25);
     barGauge(ctx, rx, 100, 150, 'DAMAGE', p.damage / 100, COLORS.hudBad, 0.99);
     barGauge(ctx, rx, 134, 150, 'THROTTLE', p.throttle, '#7fb2dd', -1);
     if (p.fuel <= 25 && p.fuel > 0 && Math.floor(time * 2) % 2 === 0) {
@@ -365,6 +365,16 @@ export function drawHud(ctx, game, time) {
     text(ctx, msg.text, VIEW_W / 2, my, 16, msg.color || COLORS.hud, 'center');
     ctx.globalAlpha = 1;
     my += 26;
+  }
+
+  // Ring-grade flash: the last grade, big and centred, fading over 2.5 s.
+  const lg = game.lastRingGrade;
+  if (lg && time - lg.at < 2.5) {
+    const age = time - lg.at;
+    ctx.globalAlpha = age > 1.5 ? Math.max(0, 1 - (age - 1.5)) : 1;
+    const gradeColor = lg.grade === 'PERFECT' ? '#ffd700' : lg.grade === 'GOOD' ? '#ffb52e' : COLORS.hud;
+    text(ctx, lg.bonus > 0 ? `${lg.grade} +${lg.bonus}` : lg.grade, VIEW_W / 2, 200, 34, gradeColor, 'center');
+    ctx.globalAlpha = 1;
   }
 
   // Speed / altitude warning when low and slow over the ground.
@@ -421,9 +431,41 @@ export function drawMenu(ctx, game, time) {
     if (card.best) text(ctx, `Best score ${card.best}`, x + 16, y + 130, 12, COLORS.hudGood);
   });
 
-  text(ctx, 'W/S throttle · Arrow keys pitch and bank · Mouse drag steers · Wheel throttle · C cockpit view · B drop a supply crate', VIEW_W / 2, 440, 15, COLORS.hud, 'center');
-  text(ctx, 'Land gently on a strip: slow, level wings, sink under 4 m/s. Water and hills are not runways.', VIEW_W / 2, 468, 14, COLORS.hudDim, 'center');
-  text(ctx, 'Press Enter or click a mission to fly.', VIEW_W / 2, 520, 16, COLORS.hud, 'center');
+  // Career upgrades (keys 6, 7, 8) and the career line, below the cards.
+  const career = game.career || { gold: 0, flights: 0, landings: 0, bestRank: {}, upgrades: { tank: 0, climb: 0, hull: 0 } };
+  const ups = [
+    { id: 'tank', key: '6' },
+    { id: 'climb', key: '7' },
+    { id: 'hull', key: '8' },
+  ];
+  const uw = 360;
+  const ux0 = VIEW_W / 2 - ((uw * 3 + gap * 2) / 2);
+  ups.forEach((u, i) => {
+    const up = UPGRADES[u.id];
+    const level = career.upgrades[u.id] || 0;
+    const x = ux0 + i * (uw + gap);
+    const y = 402;
+    panel(ctx, x, y, uw, 52, 0.55);
+    ctx.strokeStyle = 'rgba(234, 246, 255, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x, y, uw, 52, 8);
+    ctx.stroke();
+    text(ctx, `[${u.key}] ${up.name}`, x + 14, y + 16, 15, COLORS.hud);
+    text(ctx, '●'.repeat(level) + '○'.repeat(3 - level), x + uw - 14, y + 16, 15, COLORS.ringNext, 'right');
+    const afford = level < 3 && career.gold >= up.costs[level];
+    text(ctx, level < 3 ? `Next level: ${up.costs[level]} gold` : 'MAXED', x + 14, y + 36, 12, level < 3 ? (afford ? COLORS.hudGood : COLORS.hudDim) : COLORS.ringNext);
+    text(ctx, up.desc, x + uw - 14, y + 36, 11, COLORS.hudDim, 'right');
+  });
+  const ranks = MISSIONS.map((m) => `${m.name.split(' ')[0]} ${career.bestRank[m.id] || '—'}`).join(' · ');
+  text(ctx, `GOLD ${career.gold} · FLIGHTS ${career.flights} · LANDINGS ${career.landings} · BEST RANKS ${ranks}`, VIEW_W / 2, 472, 14, COLORS.ringNext, 'center');
+
+  text(ctx, 'W/S throttle · Arrow keys pitch and bank · Mouse drag steers · Wheel throttle · C cockpit view · B drop a supply crate', VIEW_W / 2, 500, 15, COLORS.hud, 'center');
+  text(ctx, 'Land gently on a strip: slow, level wings, sink under 4 m/s. Water and hills are not runways.', VIEW_W / 2, 526, 14, COLORS.hudDim, 'center');
+  text(ctx, 'Press Enter or click a mission to fly.', VIEW_W / 2, 566, 16, COLORS.hud, 'center');
+  // The latest message (e.g. an upgrade purchase) shows under the menu.
+  const lastMsg = game.messages[game.messages.length - 1];
+  if (lastMsg) text(ctx, lastMsg.text, VIEW_W / 2, 600, 15, lastMsg.color || COLORS.hud, 'center');
 }
 
 function wrapText(ctx, s, x, y, maxW, lh) {
@@ -457,6 +499,18 @@ export function drawEnd(ctx, game) {
   else if (game.zones.length > 0) text(ctx, `Down safely at ${game.stripName} — but some drop zones are still waiting.`, VIEW_W / 2, 216, 18, COLORS.hud, 'center');
   else text(ctx, `Down safely at ${game.stripName} — but the rings are still waiting.`, VIEW_W / 2, 216, 18, COLORS.hud, 'center');
 
+  // Landing verdict card: the named grade plus the touchdown numbers.
+  // It pushes the score rows down so everything still fits on 720 px.
+  let rowsY = 280;
+  if (ok && game.landingVerdict && game.landingMetrics) {
+    const m = game.landingMetrics;
+    const vColor = game.landingVerdict === 'GREASED IT' ? '#ffd700' : COLORS.hudGood;
+    panel(ctx, VIEW_W / 2 - 260, 232, 520, 64, 0.6);
+    text(ctx, game.landingVerdict, VIEW_W / 2, 254, 26, vColor, 'center');
+    text(ctx, `Touchdown ${m.speedKt} kt · sink ${m.sink.toFixed(1)} m/s · ${m.offset} m off centre`, VIEW_W / 2, 282, 14, COLORS.hud, 'center');
+    rowsY = 312;
+  }
+
   const rows = [
     ...(game.rings.length > 0 ? [['Rings flown', `${game.ringIndex} of ${game.rings.length}`]] : []),
     ...(game.zones.length > 0 ? [
@@ -465,16 +519,21 @@ export function drawEnd(ctx, game) {
     ] : []),
     ['Best combo', game.combo > 1 ? `x${game.combo}` : '—'],
     ['Time', formatTime(game.elapsed)],
-    ['Fuel left', `${Math.round(game.plane.fuel)}%`],
+    ['Fuel left', `${Math.round(game.plane.fuel / (game.fuelMax || 100) * 100)}%`],
     ['Damage', `${Math.round(game.plane.damage)}%`],
     ['Landing', game.landingRating || '—'],
+    ['Rank', game.rankLetter || '—'],
+    ['Gold earned', `+${game.goldEarned || 0}`],
+    ['Career gold', String(game.career ? game.career.gold : 0)],
+    ['Career flights', String(game.career ? game.career.flights : 0)],
+    ['Career landings', String(game.career ? game.career.landings : 0)],
     ['SCORE', String(game.score)],
   ];
-  let y = 280;
+  let y = rowsY;
   for (const [k, v] of rows) {
     text(ctx, k, VIEW_W / 2 - 130, y, 16, COLORS.hudDim, 'left');
     text(ctx, v, VIEW_W / 2 + 130, y, 16, k === 'SCORE' ? COLORS.ringNext : COLORS.hud, 'right');
-    y += 34;
+    y += 28;
   }
   text(ctx, 'Press R to fly again · Q for the mission list', VIEW_W / 2, y + 30, 16, COLORS.hud, 'center');
 }

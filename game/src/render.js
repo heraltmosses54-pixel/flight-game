@@ -140,7 +140,9 @@ function drawSky(ctx, basis, plane, time, storm, golden) {
     basis.cam[2] + sunDir[2] * 8000,
   ];
   const s = project(basis, sunPoint);
-  if (s) {
+  // No sun in a storm: the squall hides it, and a bright sun is what
+  // makes the storm shot read as a fair-weather day.
+  if (s && !storm) {
     const glow = ctx.createRadialGradient(s.x, s.y, 4, s.x, s.y, golden ? 190 : 130);
     glow.addColorStop(0, golden ? GOLDEN.sunGlow : COLORS.sunGlow);
     glow.addColorStop(1, 'rgba(255, 236, 170, 0)');
@@ -535,12 +537,14 @@ function drawCrate(ctx, basis, crate, time) {
   }
   ctx.restore();
 }
-function drawCloud(ctx, basis, c) {
+function drawCloud(ctx, basis, c, storm) {
   const p = project(basis, [c.x, c.y, c.z]);
   if (!p) return;
   const s = (c.s * FOCAL) / p.d;
   if (s < 3) return;
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+  // Storm clouds are dark slate, not white — the white puffs are what
+  // made the storm shot read as a sunny day.
+  ctx.fillStyle = storm ? 'rgba(74, 84, 104, 0.92)' : 'rgba(255, 255, 255, 0.88)';
   ctx.beginPath();
   ctx.ellipse(p.x - s * 0.4, p.y + s * 0.06, s * 0.5, s * 0.22, 0, 0, Math.PI * 2);
   ctx.ellipse(p.x, p.y - s * 0.08, s * 0.62, s * 0.26, 0, 0, Math.PI * 2);
@@ -558,6 +562,9 @@ function drawPlane(ctx, plane, time, groundY) {
   // The camera already rolls 60% with the plane; the plane takes the
   // remaining 40% here, so it banks against a correctly tilted horizon.
   ctx.rotate(bank * 0.4);
+  // Bigger read: the chase plane is scaled up so the high-wing bush
+  // silhouette, struts and gear all read at a glance.
+  ctx.scale(1.15, 1.15);
   // Tail.
   ctx.fillStyle = COLORS.planeRed;
   ctx.beginPath();
@@ -595,6 +602,16 @@ function drawPlane(ctx, plane, time, groundY) {
   ctx.lineTo(10, 16);
   ctx.closePath();
   ctx.fill();
+  // High-wing struts: thin lines from the lower fuselage out to the
+  // wings — the Cessna cue that says "high-wing" from behind.
+  ctx.strokeStyle = 'rgba(70, 35, 28, 0.75)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-13, 30);
+  ctx.lineTo(-58, 2);
+  ctx.moveTo(13, 30);
+  ctx.lineTo(58, 2);
+  ctx.stroke();
   // Fuselage: cream metal shaded across its width (bright sun side,
   // darker edges) with a specular stripe, so the body reads as painted
   // metal instead of a flat cutout.
@@ -615,6 +632,11 @@ function drawPlane(ctx, plane, time, groundY) {
   ctx.beginPath();
   ctx.ellipse(-8, 4, 3.5, 46, 0, 0, Math.PI * 2);
   ctx.fill();
+  // Cheatline: the red stripe runs the length of the fuselage on both
+  // sides, Cessna-style, not just a band at the nose.
+  ctx.fillStyle = 'rgba(192, 57, 43, 0.9)';
+  ctx.fillRect(-14, -34, 3, 88);
+  ctx.fillRect(11, -34, 3, 88);
   // Red cowling band across the nose tip, with a panel seam at its lower
   // edge and two dark cooling intakes flanking the spinner.
   const cowlGrad = ctx.createLinearGradient(0, -44, 0, -34);
@@ -650,6 +672,17 @@ function drawPlane(ctx, plane, time, groundY) {
   const spin = time * 28;
   ctx.save();
   ctx.translate(0, -58);
+  // The spinning prop reads as a full faint disc (ref front view),
+  // not just a bar: a thin circle behind the blades.
+  ctx.fillStyle = 'rgba(40, 40, 48, 0.10)';
+  ctx.beginPath();
+  ctx.arc(0, 0, 34, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(40, 40, 48, 0.28)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(0, 0, 34, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.rotate(spin);
   ctx.fillStyle = 'rgba(40, 40, 48, 0.35)';
   ctx.beginPath();
@@ -678,6 +711,30 @@ function drawPlane(ctx, plane, time, groundY) {
     ctx.arc(Math.cos(a) * 6.5, -58 + Math.sin(a) * 6.5, 1, 0, Math.PI * 2);
     ctx.fill();
   }
+  // Fixed tricycle gear: short legs down from the belly, two main wheels
+  // outboard and a nose wheel on the centreline (Cessna refs).
+  ctx.strokeStyle = '#2c2c34';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(-12, 54);
+  ctx.lineTo(-18, 64);
+  ctx.moveTo(12, 54);
+  ctx.lineTo(18, 64);
+  ctx.moveTo(0, 58);
+  ctx.lineTo(0, 67);
+  ctx.stroke();
+  ctx.fillStyle = '#1a1a20';
+  ctx.beginPath();
+  ctx.arc(-18, 66, 4.5, 0, Math.PI * 2);
+  ctx.arc(18, 66, 4.5, 0, Math.PI * 2);
+  ctx.arc(0, 69, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#8a94a6';
+  ctx.beginPath();
+  ctx.arc(-18, 66, 1.8, 0, Math.PI * 2);
+  ctx.arc(18, 66, 1.8, 0, Math.PI * 2);
+  ctx.arc(0, 69, 1.4, 0, Math.PI * 2);
+  ctx.fill();
   // Registration on the tail.
   ctx.fillStyle = COLORS.planeCream;
   ctx.font = 'bold 9px sans-serif';
@@ -689,14 +746,14 @@ function drawPlane(ctx, plane, time, groundY) {
 
 // Rain streaks for the storm mission.
 function drawRain(ctx, time) {
-  ctx.strokeStyle = 'rgba(200, 215, 235, 0.35)';
+  ctx.strokeStyle = 'rgba(200, 215, 235, 0.45)';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < 140; i++) {
     const x = ((i * 137 + time * 620) % (VIEW_W + 40)) - 20;
     const y = ((i * 211 + time * 900) % (VIEW_H + 40)) - 20;
     ctx.moveTo(x, y);
-    ctx.lineTo(x - 5, y + 16);
+    ctx.lineTo(x - 5, y + 20);
   }
   ctx.stroke();
 }
@@ -718,7 +775,7 @@ export function drawScene(ctx, game, world, time) {
 
   // Billboards far to near: clouds, objects, rings.
   const drawables = [];
-  for (const c of world.clouds) drawables.push({ d: c.z - plane.z, fn: () => drawCloud(ctx, basis, c) });
+  for (const c of world.clouds) drawables.push({ d: c.z - plane.z, fn: () => drawCloud(ctx, basis, c, storm) });
   for (const o of world.objects) drawables.push({ d: o.z - plane.z, fn: () => drawObject(ctx, basis, o, time, game.wind) });
   game.rings.forEach((ring, i) => {
     const state = i < game.ringIndex ? 'done' : i === game.ringIndex ? 'next' : 'later';

@@ -325,6 +325,22 @@ export function drawCockpit(ctx, game, time) {
     ctx.arc(cx + dx, panelY - 43, 1.2, 0, Math.PI * 2);
     ctx.fill();
   }
+  // Spinning prop, seen from the pilot's seat: a faint disc over the
+  // nose with two blurred blades turning around the spinner (the disc
+  // reads through the mission banner at half alpha, like the dome).
+  ctx.save();
+  ctx.translate(cx, panelY - 46);
+  ctx.fillStyle = 'rgba(40, 40, 48, 0.10)';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 62, 20, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.rotate(time * 28);
+  ctx.fillStyle = 'rgba(40, 40, 48, 0.30)';
+  ctx.beginPath();
+  ctx.roundRect(-3, -58, 6, 44, 3);
+  ctx.roundRect(-3, 14, 6, 44, 3);
+  ctx.fill();
+  ctx.restore();
 
   // Dashboard panel.
   const grad = ctx.createLinearGradient(0, panelY, 0, VIEW_H);
@@ -350,7 +366,7 @@ export function drawCockpit(ctx, game, time) {
   headingGauge(ctx, gx[3], gy, r, headingDeg);
   roundGauge(ctx, gx[4], gy, r, 'CLIMB', p.verticalSpeed, -10, 10, 'm/s', { steps: 4, tickLabels: true });
   const fuelLow = p.fuel <= 25;
-  roundGauge(ctx, gx[5], gy, r, 'FUEL', p.fuel, 0, 100, '%', { steps: 4, redFrom: 25 });
+  roundGauge(ctx, gx[5], gy, r, 'FUEL', p.fuel / (game.fuelMax || 100) * 100, 0, 100, '%', { steps: 4, redFrom: 25 });
   if (fuelLow && Math.floor(time * 2) % 2 === 0) {
     text(ctx, 'LOW FUEL', gx[5], gy - r - 16, 13, COLORS.hudWarn);
   }

@@ -4,7 +4,7 @@
 // players never see it.
 
 // The four shots the entry hands in.
-export const SHOT_NAMES = ['1-cover', '2-rings', '3-landing', '4-supply'];
+export const SHOT_NAMES = ['1-cover', '2-rings', '3-landing', '4-storm'];
 
 export function shotFromUrl(url) {
   const q = new URL(url).searchParams;
@@ -50,34 +50,34 @@ export function stageShot(game, shot, seed) {
     game.particles.burst(-140, 95, 3000);
     game.say('Ring 2 of 3 — through the gold ring', '#58d68d');
   } else if (shot === '3-landing') {
-    // Short final to Coral Strip, on the glidepath: PAPI 2 white 2 red,
-    // "SHORT FINAL — full flap" on the panel, dust rising off the runway.
-    // Cockpit view, staged 150 m out: the runway band reads big below
-    // the nose, with the PAPI lights and the dust on it.
-    set(0, { x: 4, y: 10, z: 5400, heading: 0, pitch: -0.03, roll: 0.01, speed: 44, throttle: 0.35, fuel: 71, verticalSpeed: -2.2 });
-    game.view = 'cockpit';
+    // The LANDED end screen at Coral Strip: all 3 rings done, the plane
+    // on the runway, and the "GREASED IT" verdict card on the panel.
+    // The runway scene stays behind the dimmed end panel (chase view).
+    set(0, { x: 3, y: game.world.groundHeight(3, 6000), z: 6000, heading: 0, pitch: 0, roll: 0, speed: 33, throttle: 0, fuel: 71, verticalSpeed: -1.4 });
     game.ringIndex = 3;
-    game.score = 3400;
+    game.score = 4100;
+    game.ringScore = 3400;
     game.combo = 3;
     game.comboTimer = 8;
     game.elapsed = 128;
-    game.particles.dust(10, 2, 5800);
-    game.particles.dust(-6, 2, 5950);
-    game.say('All rings done — landing at Coral Strip', '#eaf6ff');
-  } else if (shot === '4-supply') {
-    // Supply Run over Zone 1: the plane low on the approach, a crate
-    // mid-drop under its orange parachute, the ringed drop zone on the
-    // ground below, the HUD banner calling the next zone.
-    set(3, { x: -230, y: 88, z: 1640, heading: 0.04, pitch: 0.02, roll: 0.08, speed: 50, throttle: 0.7, fuel: 84, verticalSpeed: 1.0 });
-    game.score = 500;
+    game.landingMetrics = { speedKt: 64, sink: 1.4, offset: 3 };
+    game.landingVerdict = 'GREASED IT';
+    game.finishFlight(true);
+    // finishFlight does not touch these; re-apply so the staged values win.
+    game.landingMetrics = { speedKt: 64, sink: 1.4, offset: 3 };
+    game.landingVerdict = 'GREASED IT';
+    game.view = 'chase';
+    game.say('All rings done — down safely at Coral Strip', '#eaf6ff');
+  } else if (shot === '4-storm') {
+    // Storm Run in the squall: dark storm sky, rain streaks, a gold ring
+    // ahead in the murk, the plane pushing through gusting wind. This is
+    // the shot that shows the weather — all other shots are fair weather.
+    set(2, { x: -220, y: 90, z: 1000, heading: 0.02, pitch: 0.04, roll: 0.1, speed: 62, throttle: 0.8, fuel: 52, verticalSpeed: 3 });
+    game.ringIndex = 0;
+    game.score = 1200;
     game.combo = 1;
-    game.elapsed = 58;
-    game.crates.push({
-      x: -252, y: 62, z: 1760,
-      vx: 4, vy: -6, vz: 42,
-      state: 'falling', age: 1.2,
-    });
-    game.say('Supply Run — crate away over Zone 1', '#ffb52e');
+    game.elapsed = 36;
+    game.say('Storm Run — ring 1 of 6 through the squall', '#ffb52e');
   } else {
     return false;
   }

@@ -1,8 +1,8 @@
 // Boot and the main loop: wire input, audio, the game and the renderer
 // together, run requestAnimationFrame, and handle the menu keys and clicks.
 
-import { VIEW_W, VIEW_H, MISSIONS } from './config.js';
-import { makeGame } from './game.js';
+import { VIEW_W, VIEW_H, MISSIONS, UPGRADES } from './config.js';
+import { makeGame, saveCareer } from './game.js';
 import { makeInput } from './input.js';
 import { makeAudio } from './audio.js';
 import { drawScene } from './render.js';
@@ -87,6 +87,31 @@ function frame(now) {
     if (input.wasPressed('Digit3')) game.startMission(2);
     if (input.wasPressed('Digit4')) game.startMission(3);
     if (input.wasPressed('Digit5')) game.startFreeFlight();
+    // Buy the next level of an upgrade with gold (keys 6, 7, 8).
+    const buyUpgrade = (id) => {
+      const up = UPGRADES[id];
+      const c = game.career;
+      const level = c.upgrades[id];
+      if (level >= 3) {
+        game.say(`${up.name} is already maxed.`, '#eaf6ff');
+        return;
+      }
+      const cost = up.costs[level];
+      if (c.gold < cost) {
+        game.say('Not enough gold — fly more missions.', '#ffb52e');
+        return;
+      }
+      c.gold -= cost;
+      c.upgrades[id] += 1;
+      saveCareer(c);
+      const detail = id === 'tank' ? `${100 + 25 * c.upgrades[id]} fuel`
+        : id === 'climb' ? `+${10 * c.upgrades[id]}% pitch`
+        : `${25 * c.upgrades[id]}% less damage`;
+      game.say(`${up.name} upgraded — ${detail}.`, '#58d68d');
+    };
+    if (input.wasPressed('Digit6')) buyUpgrade('tank');
+    if (input.wasPressed('Digit7')) buyUpgrade('climb');
+    if (input.wasPressed('Digit8')) buyUpgrade('hull');
     if (input.wasPressed('Enter')) game.startMission(0);
     game.menuHover = menuCardAt(input.mouseX, input.mouseY);
   }

@@ -9,6 +9,17 @@ import { makeParticles } from './particles.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
+// Landing verdict from the touchdown numbers: a gentle, slow, centred
+// touchdown with no damage is a greased landing; harder sinks grade down.
+function landingVerdict(metrics, damage) {
+  // Stall is 33 m/s (~64 kt), so a gentle touchdown is 64-72 kt; 48 kt
+  // would be below stall and unreachable — the bar must sit just above it.
+  if (metrics.sink < 1.5 && metrics.speedKt <= 72 && metrics.offset <= 5 && damage === 0) return 'GREASED IT';
+  if (metrics.sink < 3) return 'SMOOTH TOUCHDOWN';
+  if (metrics.sink <= 4.5) return 'FIRM LANDING';
+  return 'HARD LANDING';
+}
+
 function loadBest() {
   try {
     return JSON.parse(localStorage.getItem('skypost-best') || '{}');
@@ -22,6 +33,43 @@ function saveBest(best) {
     localStorage.setItem('skypost-best', JSON.stringify(best));
   } catch {
     // Private mode or no storage: best scores just do not persist.
+  }
+}
+
+// Career store: gold, flight totals, best rank per mission and owned
+// upgrade levels. Same try/catch pattern as the best scores.
+function defaultCareer() {
+  return {
+    gold: 0,
+    flights: 0,
+    landings: 0,
+    ringsTotal: 0,
+    dropsTotal: 0,
+    bestRank: {},
+    upgrades: { tank: 0, climb: 0, hull: 0 },
+  };
+}
+
+export function loadCareer() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('skypost-career') || '{}');
+    const c = defaultCareer();
+    return {
+      ...c,
+      ...raw,
+      bestRank: { ...(raw.bestRank || {}) },
+      upgrades: { ...c.upgrades, ...(raw.upgrades || {}) },
+    };
+  } catch {
+    return defaultCareer();
+  }
+}
+
+export function saveCareer(career) {
+  try {
+    localStorage.setItem('skypost-career', JSON.stringify(career));
+  } catch {
+    // Private mode or no storage: the career just does not persist.
   }
 }
 
@@ -56,9 +104,17 @@ export function makeGame(canvas) {
     particles: makeParticles(),
     messages: [],
     best: loadBest(),
+    career: loadCareer(),
+    fuelMax: 100, // fuel capacity with the tank upgrade applied
+    upgradeLevels: { tank: 0, climb: 0, hull: 0 }, // owned levels this flight
+    goldEarned: 0, // gold banked by the last finished flight
+    rankLetter: '', // S/A/B/C for the last finished flight
     menuHover: -1,
     missionComplete: false,
     landingRating: '',
+    lastRingGrade: null, // { grade, bonus, at, ringNo } — last ring flown
+    landingMetrics: null, // { speedKt, sink, offset } at touchdown
+    landingVerdict: '', // GREASED IT / SMOOTH TOUCHDOWN / FIRM / HARD
     stalled: false,
     prevZ: 0,
     freeFlight: false,
@@ -98,6 +154,12 @@ export function makeGame(canvas) {
     game.landingRating = '';
     game.freeFlight = false;
     game.plane = makePlane(mission.start);
+    // Owned upgrades apply to this flight: a bigger tank, stronger pitch,
+    // a tougher airframe. Fuel starts at the mission's percentage of the
+    // (possibly enlarged) tank.
+    game.upgradeLevels = { ...game.career.upgrades };
+    game.fuelMax = 100 + 25 * game.upgradeLevels.tank;
+    game.plane.fuel = (mission.start.fuel / 100) * game.fuelMax;
     game.prevZ = game.plane.z;
     game.state = 'briefing';
     game.briefAt = game.time;
@@ -125,6 +187,10 @@ export function makeGame(canvas) {
     game.missionComplete = false;
     game.freeFlight = true;
     game.plane = makePlane({ x: 0, y: 150, z: 200, heading: 0, speed: 58, throttle: 0.6, fuel: 100 });
+    // Same tank upgrade as missions, so the fuel gauge stays honest here.
+    game.upgradeLevels = { ...game.career.upgrades };
+    game.fuelMax = 100 + 25 * game.upgradeLevels.tank;
+    game.plane.fuel = game.fuelMax;
     game.prevZ = game.plane.z;
     game.state = 'flying';
     game.saidGlide = false;
@@ -200,6 +266,26 @@ export function makeGame(canvas) {
         saveBest(game.best);
       }
     }
+    // Career: gold and a rank letter for this flight, kept on this machine.
+    const par = game.mission ? game.mission.par : 0;
+    const earned = Math.round(game.score / 25) + (landed ? 50 : 0) + (game.missionComplete ? 100 : 0);
+    game.goldEarned = earned;
+    game.rankLetter = par > 0 && game.score >= par ? 'S'
+      : par > 0 && game.score >= 0.8 * par ? 'A'
+      : par > 0 && game.score >= 0.6 * par ? 'B' : 'C';
+    const c = game.career;
+    c.flights += 1;
+    if (landed) c.landings += 1;
+    c.ringsTotal += game.ringIndex;
+    c.dropsTotal += game.zones.filter((z) => z.done).length;
+    c.gold += earned;
+    if (game.mission) {
+      const order = { C: 0, B: 1, A: 2, S: 3 };
+      const prev = c.bestRank[game.mission.id];
+      if (!prev || order[game.rankLetter] > order[prev]) c.bestRank[game.mission.id] = game.rankLetter;
+    }
+    saveCareer(c);
+    game.career = c;
   };
 
   // One frame of game logic. `ctl` is the polled input, `dt` seconds.
@@ -218,12 +304,17 @@ export function makeGame(canvas) {
     game.elapsed += dt;
 
     const gust = game.wind > 0 ? game.gustNoise(game.time * 0.35) * game.wind : 0;
-    const event = stepPlane(game.plane, ctl, game.world, game.strips, dt, game.wind * 0.4, gust);
+    // The climb upgrade scales the pitch command: +10% per level.
+    const event = stepPlane(game.plane, { ...ctl, pitch: ctl.pitch * (1 + 0.1 * game.upgradeLevels.climb) }, game.world, game.strips, dt, game.wind * 0.4, gust);
     const p = game.plane;
     game.stalled = p.speed < 33 && p.airborne;
 
     if (event === 'airborne') game.say('Airborne — gear up, flaps up, enjoy the islands.', '#58d68d');
     if (event === 'hard') {
+      // The hull upgrade soaks part of the knock: 25% of the 28-point
+      // hard-landing damage per level.
+      const soaked = DAMAGE.hardLanding * 0.25 * game.upgradeLevels.hull;
+      if (soaked > 0) p.damage = Math.max(0, p.damage - soaked);
       game.say('Hard landing — the airframe took a knock.', '#ffb52e');
       p.damage = Math.min(100, p.damage);
     }
@@ -240,11 +331,22 @@ export function makeGame(canvas) {
         const gained = Math.round(1000 * (1 + 0.25 * (game.combo - 1)));
         game.ringScore += gained;
         game.score += gained;
+        // Ring quality: how close to the centre at the crossing decides
+        // the grade — dead centre pays a PERFECT bonus on top.
+        const dist = Math.hypot(p.x - ring.x, p.y - ring.y);
+        const grade = dist <= ring.r * 0.25 ? 'PERFECT' : dist <= ring.r * 0.6 ? 'GOOD' : 'OK';
+        const bonus = grade === 'PERFECT' ? 150 : grade === 'GOOD' ? 75 : 0;
+        game.ringScore += bonus;
+        game.score += bonus;
+        game.lastRingGrade = { grade, bonus, at: game.time, ringNo: game.ringIndex };
+        const gradeText = grade === 'PERFECT' ? `PERFECT +${bonus} — Dead centre!`
+          : grade === 'GOOD' ? `GOOD +${bonus} — Clean through!`
+          : 'OK — Through the ring.';
         game.particles.burst(ring.x, ring.y, ring.z);
         game.audio?.chime(true);
         game.say(game.combo > 1
-          ? `Ring ${game.ringIndex} of ${game.rings.length} — COMBO x${game.combo}, +${gained}!`
-          : game.ringIndex === game.rings.length ? 'All rings flown — now land at the strip.' : `Ring ${game.ringIndex} of ${game.rings.length} — nice flying.`, '#58d68d');
+          ? `${gradeText} Ring ${game.ringIndex} of ${game.rings.length} — COMBO x${game.combo}, +${gained}!`
+          : game.ringIndex === game.rings.length ? `${gradeText} All rings flown — now land at the strip.` : `${gradeText} Ring ${game.ringIndex} of ${game.rings.length} — nice flying.`, '#58d68d');
       }
     }
     game.prevZ = p.z;
@@ -333,6 +435,14 @@ export function makeGame(canvas) {
     }
     if (p.landed) {
       game.particles.dust(p.x, p.y, p.z);
+      // Touchdown numbers for the verdict card on the end screen.
+      const stripX = game.mission ? game.mission.strip.x : 0;
+      game.landingMetrics = {
+        speedKt: Math.round(p.speed * 1.944),
+        sink: Math.round(-p.verticalSpeed * 10) / 10,
+        offset: Math.round(Math.abs(p.x - stripX)),
+      };
+      game.landingVerdict = landingVerdict(game.landingMetrics, p.damage);
       game.finishFlight(true);
       game.audio?.chime(true);
       return;
