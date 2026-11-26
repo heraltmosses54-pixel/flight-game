@@ -20,7 +20,11 @@ showing airspeed, altitude, heading, fuel, damage and throttle.
    the mission.
 3. **Storm Run** — six rings in a gusting crosswind on low fuel, against
    the clock.
-4. **Free Flight** — no rings, no timer. Just you and the islands.
+4. **Supply Run** — three island drop zones. Fly low over each ring and
+   press **B** to drop a parachute crate: bullseye (within 6 m) pays 500,
+   the inner band 300, the outer ring 150. Supply all three, then land at
+   Far Strip.
+5. **Free Flight** — no rings, no timer. Just you and the islands.
 
 ## How to play
 
@@ -32,7 +36,8 @@ open `game/index.html` through a local server.
 - **Arrow Left / Right** (or A / D) — bank left / right; a banked wing
   turns the plane
 - **Mouse drag** — steer with the mouse; hold and move to bank and pitch
-- **1–4** — pick a mission from the menu · **Enter** — start
+- **B** — drop a supply crate (Supply Run; only in the air, over a zone)
+- **1–5** — pick a mission from the menu · **Enter** — start
 - **P** — pause · **R** — restart the mission · **M** — mute · **Q** — back
   to the mission list (from an end screen) · **Esc** — menu
 
@@ -43,7 +48,10 @@ controls go mushy — push the nose down and add power. A banked turn bleeds
 speed, so throttle discipline matters in the Storm Run. Land slow, wings
 level, sinking under 4 m/s, on a strip: the sea, the hills and the trees
 are not runways. Running the tank dry kills the engine and leaves you
-gliding, so plan the landing early.
+gliding, so plan the landing early. On a Supply Run, drop low and slow:
+a crate keeps some of your forward speed under its chute and drifts with
+the wind, so release a little before the ring — about a second's flying
+time ahead at approach speed — and watch the dust where it lands.
 
 ## How it is built
 
@@ -53,7 +61,7 @@ gliding, so plan the landing early.
 - `game/src/physics.js` — the flight model: lift, stall, wind, landings
 - `game/src/render.js` — the pseudo-3D chase view: sky, sea, ground, rings
 - `game/src/hud.js` — tapes, gauges, attitude ball, menus and end screens
-- `game/src/game.js` — states, missions, rings, scoring, messages
+- `game/src/game.js` — states, missions, rings, supply drops, scoring, messages
 - `game/src/input.js` — keyboard and mouse
 - `game/src/audio.js` — synthesised engine, wind and chimes (Web Audio)
 - `game/src/shots.js` — deterministic screenshot staging (`?shot=…`)
