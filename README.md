@@ -53,6 +53,25 @@ a crate keeps some of your forward speed under its chute and drifts with
 the wind, so release a little before the ring — about a second's flying
 time ahead at approach speed — and watch the dust where it lands.
 
+## Career, gold and upgrades
+
+Every finished flight banks gold and a rank letter, saved on this machine
+(localStorage key `skypost-career`):
+
+- **Gold** — `score / 25`, plus 50 for landing and 100 more for completing
+  the mission. Spend it on the menu with keys **6**, **7** and **8**.
+- **Rank** — scored against each mission's par: **S** at par, **A** at 80%
+  of par, **B** at 60%, otherwise **C**. The best rank per mission is kept.
+- **Fuel Tank (6)** — +25 fuel capacity per level (100 → 125 → 150 → 175).
+  Costs 150 / 350 / 600 gold.
+- **Climb Kit (7)** — +10% pitch response per level, so the nose answers
+  the stick harder. Costs 150 / 350 / 600 gold.
+- **Tough Hull (8)** — 25% less damage from each hard landing, per level.
+  Costs 150 / 350 / 600 gold.
+
+The menu shows your gold, flights, landings and best ranks; the end screen
+shows the flight's rank, the gold it earned and your career totals.
+
 ## How it is built
 
 - `game/src/config.js` — constants, palette and mission definitions
