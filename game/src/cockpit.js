@@ -202,20 +202,129 @@ export function drawCockpit(ctx, game, time) {
   ctx.fillRect(0, 0, VIEW_W, 10);
 
   // Engine cowling hump over the panel, nose-down into the view.
-  ctx.fillStyle = '#8c2f26';
+  // Textured like a real Cessna-style mail-plane nose (reference: Cessna
+  // 172 close-ups — polished spinner, panel seams with rivet rows,
+  // cooling intakes, bright crown shading to a dark underside): the metal
+  // reads as metal, not a flat red shape.
+  const cx = VIEW_W / 2;
+  const cowlPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(cx - 150, panelY);
+    ctx.quadraticCurveTo(cx, panelY - 46, cx + 150, panelY);
+    ctx.closePath();
+  };
+  // Base metal: bright crown (sky light) shading to a dark underside.
+  const cowlGrad = ctx.createLinearGradient(0, panelY - 46, 0, panelY);
+  cowlGrad.addColorStop(0, '#e06548');
+  cowlGrad.addColorStop(0.45, '#b23a27');
+  cowlGrad.addColorStop(1, '#5e1a12');
+  cowlPath();
+  ctx.fillStyle = cowlGrad;
+  ctx.fill();
+  ctx.save();
+  cowlPath();
+  ctx.clip();
+  // Specular highlight: a warm band along the crown, sun from upper left.
+  const hl = ctx.createLinearGradient(cx - 150, panelY - 46, cx + 150, panelY - 46);
+  hl.addColorStop(0, 'rgba(255, 226, 170, 0)');
+  hl.addColorStop(0.32, 'rgba(255, 226, 170, 0.55)');
+  hl.addColorStop(0.5, 'rgba(255, 240, 200, 0.65)');
+  hl.addColorStop(0.68, 'rgba(255, 226, 170, 0.25)');
+  hl.addColorStop(1, 'rgba(255, 226, 170, 0)');
+  ctx.fillStyle = hl;
   ctx.beginPath();
-  ctx.moveTo(VIEW_W / 2 - 150, panelY);
-  ctx.quadraticCurveTo(VIEW_W / 2, panelY - 46, VIEW_W / 2 + 150, panelY);
+  ctx.ellipse(cx, panelY - 40, 132, 13, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Long horizontal panel seam, following the crown curve.
+  ctx.strokeStyle = 'rgba(58, 12, 8, 0.6)';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(cx - 138, panelY - 12);
+  ctx.quadraticCurveTo(cx, panelY - 34, cx + 138, panelY - 12);
+  ctx.stroke();
+  // Two short vertical seams dropping from the horizontal one.
+  ctx.beginPath();
+  ctx.moveTo(cx - 62, panelY - 25);
+  ctx.quadraticCurveTo(cx - 58, panelY - 12, cx - 56, panelY);
+  ctx.moveTo(cx + 62, panelY - 25);
+  ctx.quadraticCurveTo(cx + 58, panelY - 12, cx + 56, panelY);
+  ctx.stroke();
+  // Rivet rows along the horizontal seam: dark dot + light offset dot,
+  // so each rivet reads as a raised fastener.
+  for (let x = cx - 126; x <= cx + 126; x += 18) {
+    // Follow the seam's quadratic: ends (cx±138, panelY-12),
+    // control (cx, panelY-34).
+    const t = (x - (cx - 138)) / 276;
+    const y = panelY + ((1 - t) * (1 - t) * -12 + 2 * (1 - t) * t * -34 + t * t * -12);
+    ctx.fillStyle = 'rgba(58, 12, 8, 0.75)';
+    ctx.beginPath();
+    ctx.arc(x, y, 1.7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255, 230, 190, 0.55)';
+    ctx.beginPath();
+    ctx.arc(x - 0.6, y - 0.7, 0.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Exhaust stain: a soft dark smudge trailing down the right side.
+  const stain = ctx.createRadialGradient(cx + 96, panelY - 14, 2, cx + 96, panelY - 14, 34);
+  stain.addColorStop(0, 'rgba(38, 24, 16, 0.34)');
+  stain.addColorStop(1, 'rgba(38, 24, 16, 0)');
+  ctx.fillStyle = stain;
+  ctx.beginPath();
+  ctx.ellipse(cx + 96, panelY - 12, 30, 12, 0.25, 0, Math.PI * 2);
+  ctx.fill();
+  // Cream pinstripe along the cowling's base edge (the livery cheatline).
+  ctx.strokeStyle = 'rgba(245, 234, 210, 0.85)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - 146, panelY - 2);
+  ctx.lineTo(cx + 146, panelY - 2);
+  ctx.stroke();
+  // Lower panel seam with its rivet row: this is the seam that stays
+  // visible below the mission banner, so it carries the texture where
+  // the pilot actually looks.
+  ctx.strokeStyle = 'rgba(58, 12, 8, 0.65)';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(cx - 140, panelY - 7);
+  ctx.quadraticCurveTo(cx, panelY - 16, cx + 140, panelY - 7);
+  ctx.stroke();
+  for (let x = cx - 130; x <= cx + 130; x += 20) {
+    const t = (x - (cx - 140)) / 280;
+    const y = panelY + ((1 - t) * (1 - t) * -7 + 2 * (1 - t) * t * -16 + t * t * -7);
+    ctx.fillStyle = 'rgba(58, 12, 8, 0.8)';
+    ctx.beginPath();
+    ctx.arc(x, y, 1.7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255, 230, 190, 0.55)';
+    ctx.beginPath();
+    ctx.arc(x - 0.6, y - 0.7, 0.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  // Spinner dome peeking over the crown at centre: polished metal, a
+  // bright tip, and a ring of tiny fasteners at its base. It shows
+  // through the mission banner (drawn over it at half alpha) as a
+  // bright dome, and fully in the clear air above the panel.
+  const sp = ctx.createRadialGradient(cx - 5, panelY - 54, 1, cx, panelY - 46, 14);
+  sp.addColorStop(0, '#f7f7f7');
+  sp.addColorStop(0.45, '#c9ced4');
+  sp.addColorStop(1, '#4a4d52');
+  ctx.fillStyle = sp;
+  ctx.beginPath();
+  ctx.arc(cx, panelY - 46, 12, Math.PI, 0);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
   ctx.beginPath();
-  ctx.moveTo(VIEW_W / 2 - 150, panelY);
-  ctx.quadraticCurveTo(VIEW_W / 2, panelY - 46, VIEW_W / 2 + 150, panelY);
-  ctx.lineTo(VIEW_W / 2 + 120, panelY);
-  ctx.lineTo(VIEW_W / 2 - 120, panelY);
-  ctx.closePath();
+  ctx.arc(cx - 4, panelY - 54, 2.4, 0, Math.PI * 2);
   ctx.fill();
+  ctx.fillStyle = 'rgba(40, 40, 46, 0.8)';
+  for (const dx of [-8, 0, 8]) {
+    ctx.beginPath();
+    ctx.arc(cx + dx, panelY - 43, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // Dashboard panel.
   const grad = ctx.createLinearGradient(0, panelY, 0, VIEW_H);

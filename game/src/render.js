@@ -471,11 +471,50 @@ function drawPlane(ctx, plane, time, groundY) {
   ctx.lineTo(10, 16);
   ctx.closePath();
   ctx.fill();
-  // Fuselage.
-  ctx.fillStyle = COLORS.planeCream;
+  // Fuselage: cream metal shaded across its width (bright sun side,
+  // darker edges) with a specular stripe, so the body reads as painted
+  // metal instead of a flat cutout.
+  const fusGrad = ctx.createLinearGradient(-15, 0, 15, 0);
+  fusGrad.addColorStop(0, '#d9c39a');
+  fusGrad.addColorStop(0.32, '#fff8e6');
+  fusGrad.addColorStop(0.68, '#f5ead2');
+  fusGrad.addColorStop(1, '#cbb27f');
+  ctx.fillStyle = fusGrad;
   ctx.beginPath();
   ctx.ellipse(0, 8, 15, 52, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(0, 8, 15, 52, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+  ctx.beginPath();
+  ctx.ellipse(-8, 4, 3.5, 46, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Red cowling band across the nose tip, with a panel seam at its lower
+  // edge and two dark cooling intakes flanking the spinner.
+  const cowlGrad = ctx.createLinearGradient(0, -44, 0, -34);
+  cowlGrad.addColorStop(0, '#c0392b');
+  cowlGrad.addColorStop(1, '#8e2a1f');
+  ctx.fillStyle = cowlGrad;
+  ctx.fillRect(-15, -46, 30, 11);
+  ctx.strokeStyle = 'rgba(60, 15, 10, 0.65)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-6, -35);
+  ctx.quadraticCurveTo(0, -33, 6, -35);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(20, 20, 24, 0.85)';
+  ctx.beginPath();
+  ctx.arc(-4, -41, 1.4, 0, Math.PI * 2);
+  ctx.arc(4, -41, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(90, 50, 30, 0.7)';
+  ctx.beginPath();
+  ctx.arc(-3, -37.5, 1, 0, Math.PI * 2);
+  ctx.arc(3, -37.5, 1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
   ctx.fillStyle = COLORS.planeRed;
   ctx.fillRect(-15, 2, 30, 7);
   // Cockpit window.
@@ -495,10 +534,26 @@ function drawPlane(ctx, plane, time, groundY) {
   ctx.fillStyle = 'rgba(40, 40, 48, 0.75)';
   ctx.fillRect(-2, -30, 4, 60);
   ctx.restore();
-  ctx.fillStyle = COLORS.planeDark;
+  // Spinner: a polished metal cone over the hub (bright tip, shaded rim,
+  // a ring of tiny fasteners), like a real Cessna spinner.
+  const spinGrad = ctx.createRadialGradient(-2, -60, 1, 0, -58, 9);
+  spinGrad.addColorStop(0, '#f7f7f7');
+  spinGrad.addColorStop(0.5, '#c9ced4');
+  spinGrad.addColorStop(1, '#4a4d52');
+  ctx.fillStyle = spinGrad;
   ctx.beginPath();
-  ctx.arc(0, -58, 5, 0, Math.PI * 2);
+  ctx.arc(0, -58, 8, 0, Math.PI * 2);
   ctx.fill();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.beginPath();
+  ctx.arc(-2, -60, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(40, 40, 46, 0.85)';
+  for (const a of [0.5, 1.8, 3.1, 4.4, 5.7]) {
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * 6.5, -58 + Math.sin(a) * 6.5, 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
   // Registration on the tail.
   ctx.fillStyle = COLORS.planeCream;
   ctx.font = 'bold 9px sans-serif';
