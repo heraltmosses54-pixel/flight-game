@@ -24,10 +24,10 @@ window.__game = game;
 
 // Menu card hit areas, for clicks (computed in drawMenu's layout).
 function menuCardAt(mx, my) {
-  const cw = 250;
-  const gap = 18;
-  const x0 = VIEW_W / 2 - ((cw * 4 + gap * 3) / 2);
-  for (let i = 0; i < 4; i++) {
+  const cw = 224;
+  const gap = 12;
+  const x0 = VIEW_W / 2 - ((cw * 5 + gap * 4) / 2);
+  for (let i = 0; i < 5; i++) {
     const x = x0 + i * (cw + gap);
     if (mx >= x && mx <= x + cw && my >= 240 && my <= 390) return i;
   }
@@ -39,7 +39,7 @@ canvas.addEventListener('click', () => {
   if (game.state === 'menu') {
     const i = menuCardAt(input.mouseX, input.mouseY);
     if (i >= 0) {
-      if (i === 3) game.startFreeFlight();
+      if (i === 4) game.startFreeFlight();
       else game.startMission(i);
     }
   }
@@ -74,6 +74,7 @@ function frame(now) {
     game.view = game.view === 'cockpit' ? 'chase' : 'cockpit';
     game.say(game.view === 'cockpit' ? 'Cockpit view — gauges live.' : 'Chase view.', '#eaf6ff');
   }
+  if (input.wasPressed('KeyB') && game.state === 'flying') game.dropCrate();
   if (input.wasPressed('KeyP')) {
     if (game.state === 'flying') game.state = 'paused';
     else if (game.state === 'paused') game.state = 'flying';
@@ -84,7 +85,8 @@ function frame(now) {
     if (input.wasPressed('Digit1')) game.startMission(0);
     if (input.wasPressed('Digit2')) game.startMission(1);
     if (input.wasPressed('Digit3')) game.startMission(2);
-    if (input.wasPressed('Digit4')) game.startFreeFlight();
+    if (input.wasPressed('Digit4')) game.startMission(3);
+    if (input.wasPressed('Digit5')) game.startFreeFlight();
     if (input.wasPressed('Enter')) game.startMission(0);
     game.menuHover = menuCardAt(input.mouseX, input.mouseY);
   }
@@ -110,7 +112,7 @@ function frame(now) {
     drawCard(ctx, game.mission.name, [game.mission.brief, '', 'Press Enter or push the stick to take off.']);
   }
   if (game.state === 'paused') {
-    drawCard(ctx, 'PAUSED', ['P or Esc to keep flying.', 'R restarts the mission.', 'C switches cockpit / chase view.', 'M toggles the sound.']);
+    drawCard(ctx, 'PAUSED', ['P or Esc to keep flying.', 'R restarts the mission.', 'C switches cockpit / chase view.', 'M toggles the sound.', 'B drops a supply crate (Supply Run).']);
   }
   if (game.state === 'landed' || game.state === 'crashed') drawEnd(ctx, game);
 

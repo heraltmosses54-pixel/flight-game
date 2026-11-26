@@ -4,7 +4,7 @@
 // players never see it.
 
 // The four shots the entry hands in.
-export const SHOT_NAMES = ['1-cover', '2-rings', '3-landing', '4-storm'];
+export const SHOT_NAMES = ['1-cover', '2-rings', '3-landing', '4-supply'];
 
 export function shotFromUrl(url) {
   const q = new URL(url).searchParams;
@@ -64,15 +64,20 @@ export function stageShot(game, shot, seed) {
     game.particles.dust(10, 2, 5800);
     game.particles.dust(-6, 2, 5950);
     game.say('All rings done — landing at Coral Strip', '#eaf6ff');
-  } else if (shot === '4-storm') {
-    // Storm Run mid-slalom: a ring ahead in the gloom, rain falling.
-    set(2, { x: -220, y: 100, z: 3400, heading: -0.05, pitch: 0.04, roll: 0.2, speed: 66, throttle: 0.8, fuel: 38, verticalSpeed: 3.0 });
-    game.ringIndex = 2;
-    game.score = 2600;
-    game.combo = 2;
-    game.comboTimer = 7;
-    game.elapsed = 96;
-    game.say('Storm Run — ring 3 of 6, fuel getting low', '#ffb52e');
+  } else if (shot === '4-supply') {
+    // Supply Run over Zone 1: the plane low on the approach, a crate
+    // mid-drop under its orange parachute, the ringed drop zone on the
+    // ground below, the HUD banner calling the next zone.
+    set(3, { x: -230, y: 88, z: 1640, heading: 0.04, pitch: 0.02, roll: 0.08, speed: 50, throttle: 0.7, fuel: 84, verticalSpeed: 1.0 });
+    game.score = 500;
+    game.combo = 1;
+    game.elapsed = 58;
+    game.crates.push({
+      x: -252, y: 62, z: 1760,
+      vx: 4, vy: -6, vz: 42,
+      state: 'falling', age: 1.2,
+    });
+    game.say('Supply Run — crate away over Zone 1', '#ffb52e');
   } else {
     return false;
   }

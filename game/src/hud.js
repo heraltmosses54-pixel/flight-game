@@ -146,6 +146,9 @@ function drawScorePanel(ctx, game) {
   text(ctx, `SCORE ${game.score.toLocaleString('en-US')}`, 28, 32, 18, COLORS.ringNext, 'left');
   if (game.combo > 1) {
     text(ctx, `COMBO x${game.combo} · ${Math.ceil(game.comboTimer)}s`, 28, 56, 13, '#ffd98a', 'left');
+  } else if (game.zones.length > 0) {
+    const done = game.zones.filter((z) => z.done).length;
+    text(ctx, `ZONES ${done}/${game.zones.length}`, 28, 56, 12, COLORS.hudDim, 'left');
   } else if (game.rings.length > 0) {
     text(ctx, `RINGS ${game.ringIndex}/${game.rings.length}`, 28, 56, 12, COLORS.hudDim, 'left');
   }
@@ -184,6 +187,20 @@ function drawMinimap(ctx, game) {
     ctx.beginPath();
     ctx.arc(mx(ring.x), mz(ring.z), Math.max(3, (ring.r / 4800) * w), 0, Math.PI * 2);
     ctx.stroke();
+  });
+  // Drop zones: a filled dot when supplied, a ring for the next one.
+  game.zones.forEach((zone) => {
+    const next = zone === game.zones.find((z) => !z.done);
+    ctx.strokeStyle = zone.done ? COLORS.zoneDone : next ? COLORS.zoneNext : 'rgba(234, 246, 255, 0.7)';
+    ctx.lineWidth = next ? 2.5 : 1.5;
+    ctx.beginPath();
+    ctx.arc(mx(zone.x), mz(zone.z), 4, 0, Math.PI * 2);
+    if (zone.done) {
+      ctx.fillStyle = COLORS.zoneDone;
+      ctx.fill();
+    } else {
+      ctx.stroke();
+    }
   });
   // The plane.
   const p = game.plane;
@@ -319,10 +336,18 @@ export function drawHud(ctx, game, time) {
   if (mission) {
     const bannerY = cockpit ? VIEW_H - 232 : VIEW_H - 62;
     panel(ctx, VIEW_W / 2 - 260, bannerY, 520, 48, 0.5);
-    const rings = game.ringIndex < game.rings.length
-      ? `Ring ${game.ringIndex + 1} of ${game.rings.length} — then land at ${game.stripName}`
-      : `All rings done — land at ${game.stripName}`;
-    text(ctx, rings, VIEW_W / 2, bannerY + 20, 14, COLORS.hud, 'center');
+    let objective;
+    if (game.zones.length > 0) {
+      const done = game.zones.filter((z) => z.done).length;
+      objective = done < game.zones.length
+        ? `Drop zone ${done + 1} of ${game.zones.length} — press B over the ring, then land at ${game.stripName}`
+        : `All zones supplied — land at ${game.stripName}`;
+    } else {
+      objective = game.ringIndex < game.rings.length
+        ? `Ring ${game.ringIndex + 1} of ${game.rings.length} — then land at ${game.stripName}`
+        : `All rings done — land at ${game.stripName}`;
+    }
+    text(ctx, objective, VIEW_W / 2, bannerY + 20, 14, COLORS.hud, 'center');
     if (game.timeLimit > 0) {
       text(ctx, `TIME ${formatTime(game.elapsed)} / ${formatTime(game.timeLimit)}`, VIEW_W / 2, bannerY + 42, 11, game.elapsed > game.timeLimit - 30 ? COLORS.hudWarn : COLORS.hudDim, 'center');
     } else {
@@ -347,7 +372,9 @@ export function drawHud(ctx, game, time) {
   if (p.airborne && p.y - ground < 25 && p.speed < 40) {
     text(ctx, 'LOW AND SLOW — WATCH THE GROUND', VIEW_W / 2, 132, 13, COLORS.hudWarn, 'center');
   }
-  text(ctx, 'M mute · P pause · R restart', VIEW_W - 16, VIEW_H - 14, 11, COLORS.hudDim, 'right');
+  text(ctx, game.zones.length > 0
+    ? 'M mute · P pause · R restart · B drop crate'
+    : 'M mute · P pause · R restart', VIEW_W - 16, VIEW_H - 14, 11, COLORS.hudDim, 'right');
 }
 
 export function formatTime(t) {
@@ -362,17 +389,18 @@ export function drawMenu(ctx, game, time) {
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   text(ctx, 'SKY POST', VIEW_W / 2, 108, 84, COLORS.hud, 'center');
   text(ctx, 'ISLAND AIR MAIL — fly the mail, mind the fuel', VIEW_W / 2, 158, 20, COLORS.ringNext, 'center');
-  text(ctx, 'Pick a mission — keys 1, 2, 3, or 4 for a free flight. Click a card or press its key.', VIEW_W / 2, 200, 15, COLORS.hudDim, 'center');
+  text(ctx, 'Pick a mission — keys 1, 2, 3, 4, or 5 for a free flight. Click a card or press its key.', VIEW_W / 2, 200, 15, COLORS.hudDim, 'center');
 
   const cards = [
     { key: '1', name: 'First Delivery', desc: 'Take off, fly 3 rings, land at Coral Strip.', best: game.best.first },
     { key: '2', name: 'Island Hop', desc: 'Three drops across the chain on a tight tank.', best: game.best.hop },
     { key: '3', name: 'Storm Run', desc: 'Six rings in gusting wind. Fast and clean wins.', best: game.best.storm },
-    { key: '4', name: 'Free Flight', desc: 'No rings, no timer. Just you and the islands.', best: null },
+    { key: '4', name: 'Supply Run', desc: 'Drop a crate on each island ring. Press B over the zone — bullseye pays 500.', best: game.best.supply },
+    { key: '5', name: 'Free Flight', desc: 'No rings, no timer. Just you and the islands.', best: null },
   ];
-  const cw = 250;
-  const gap = 18;
-  const x0 = VIEW_W / 2 - ((cw * 4 + gap * 3) / 2);
+  const cw = 224;
+  const gap = 12;
+  const x0 = VIEW_W / 2 - ((cw * 5 + gap * 4) / 2);
   cards.forEach((card, i) => {
     const x = x0 + i * (cw + gap);
     const y = 240;
@@ -393,7 +421,7 @@ export function drawMenu(ctx, game, time) {
     if (card.best) text(ctx, `Best score ${card.best}`, x + 16, y + 130, 12, COLORS.hudGood);
   });
 
-  text(ctx, 'W/S throttle · Arrow keys pitch and bank · Mouse drag steers · Wheel throttle · C cockpit view', VIEW_W / 2, 440, 15, COLORS.hud, 'center');
+  text(ctx, 'W/S throttle · Arrow keys pitch and bank · Mouse drag steers · Wheel throttle · C cockpit view · B drop a supply crate', VIEW_W / 2, 440, 15, COLORS.hud, 'center');
   text(ctx, 'Land gently on a strip: slow, level wings, sink under 4 m/s. Water and hills are not runways.', VIEW_W / 2, 468, 14, COLORS.hudDim, 'center');
   text(ctx, 'Press Enter or click a mission to fly.', VIEW_W / 2, 520, 16, COLORS.hud, 'center');
 }
@@ -424,11 +452,17 @@ export function drawEnd(ctx, game) {
   const color = ok ? COLORS.hudGood : COLORS.hudBad;
   text(ctx, title, VIEW_W / 2, 170, 56, color, 'center');
   if (!ok) text(ctx, game.plane.crashCause || 'The flight is over.', VIEW_W / 2, 216, 18, COLORS.hud, 'center');
+  else if (game.missionComplete && game.zones.length > 0) text(ctx, `All zones supplied and down safely at ${game.stripName}.`, VIEW_W / 2, 216, 18, COLORS.hud, 'center');
   else if (game.missionComplete) text(ctx, `All rings flown and down safely at ${game.stripName}.`, VIEW_W / 2, 216, 18, COLORS.hud, 'center');
+  else if (game.zones.length > 0) text(ctx, `Down safely at ${game.stripName} — but some drop zones are still waiting.`, VIEW_W / 2, 216, 18, COLORS.hud, 'center');
   else text(ctx, `Down safely at ${game.stripName} — but the rings are still waiting.`, VIEW_W / 2, 216, 18, COLORS.hud, 'center');
 
   const rows = [
-    ['Rings flown', `${game.ringIndex} of ${game.rings.length}`],
+    ...(game.rings.length > 0 ? [['Rings flown', `${game.ringIndex} of ${game.rings.length}`]] : []),
+    ...(game.zones.length > 0 ? [
+      ['Zones supplied', `${game.zones.filter((z) => z.done).length} of ${game.zones.length}`],
+      ['Drop points', String(game.dropScore)],
+    ] : []),
     ['Best combo', game.combo > 1 ? `x${game.combo}` : '—'],
     ['Time', formatTime(game.elapsed)],
     ['Fuel left', `${Math.round(game.plane.fuel)}%`],

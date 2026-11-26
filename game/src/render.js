@@ -410,7 +410,131 @@ function drawRing(ctx, basis, ring, state, time) {
   ctx.restore();
 }
 
-// A cloud: a cluster of soft ellipses.
+// A drop zone: concentric rings painted on the ground — outer ring,
+// inner band and bullseye — so the scoring bands read from the air.
+function drawZone(ctx, basis, world, zone, state, time) {
+  const pts = [];
+  for (let i = 0; i <= 28; i++) {
+    const a = (i / 28) * Math.PI * 2;
+    const x = zone.x + Math.cos(a) * zone.r;
+    const z = zone.z + Math.sin(a) * zone.r;
+    const p = project(basis, [x, world.groundHeight(x, z) + 0.4, z]);
+    if (!p) return;
+    pts.push(p);
+  }
+  const color = state === 'next' ? COLORS.zoneNext : state === 'done' ? COLORS.zoneDone : COLORS.zoneLater;
+  const pulse = state === 'next' ? 0.65 + 0.3 * Math.sin(time * 4) : 1;
+  const ring = (radius, alpha, width) => {
+    ctx.save();
+    ctx.globalAlpha = alpha * pulse;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    for (let i = 0; i <= 28; i++) {
+      const a = (i / 28) * Math.PI * 2;
+      const x = zone.x + Math.cos(a) * radius;
+      const z = zone.z + Math.sin(a) * radius;
+      const p = project(basis, [x, world.groundHeight(x, z) + 0.4, z]);
+      if (!p) {
+        ctx.restore();
+        return;
+      }
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  };
+  // Translucent disc under the rings, so the zone reads on any terrain.
+  ctx.save();
+  ctx.globalAlpha = 0.22 * pulse;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  ring(zone.r, 0.95, 3);
+  ring(zone.r * 0.66, 0.6, 2);
+  ring(zone.r * 0.33, 0.6, 2);
+  // Centre peg.
+  const c = project(basis, [zone.x, zone.y + 0.6, zone.z]);
+  if (c) {
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// A supply crate: an orange parachute canopy with shroud lines over a
+// wooden box while it falls; on the ground, the box with the canopy
+// crumpled beside it.
+function drawCrate(ctx, basis, crate, time) {
+  const p = project(basis, [crate.x, crate.y, crate.z]);
+  if (!p) return;
+  const k = FOCAL / p.d;
+  const sway = crate.state === 'falling' ? Math.sin(time * 2.2 + crate.x) * 0.06 : 0;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(sway);
+  if (crate.state === 'falling') {
+    const cr = Math.max(3, 3.4 * k);
+    // Canopy: orange dome with a cream panel down the middle.
+    ctx.fillStyle = COLORS.crateCanopy;
+    ctx.beginPath();
+    ctx.arc(0, -cr * 1.9, cr, Math.PI, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(245, 234, 210, 0.9)';
+    ctx.beginPath();
+    ctx.moveTo(-cr * 0.28, -cr * 1.9 - cr * 0.95);
+    ctx.lineTo(cr * 0.28, -cr * 1.9 - cr * 0.95);
+    ctx.lineTo(cr * 0.28, -cr * 1.9);
+    ctx.lineTo(-cr * 0.28, -cr * 1.9);
+    ctx.closePath();
+    ctx.fill();
+    // Shroud lines from the canopy rim to the box.
+    ctx.strokeStyle = 'rgba(40, 40, 44, 0.8)';
+    ctx.lineWidth = Math.max(1, 0.12 * k);
+    ctx.beginPath();
+    ctx.moveTo(-cr, -cr * 1.9);
+    ctx.lineTo(-cr * 0.28, -cr * 0.5);
+    ctx.moveTo(cr, -cr * 1.9);
+    ctx.lineTo(cr * 0.28, -cr * 0.5);
+    ctx.moveTo(0, -cr * 1.9 - cr);
+    ctx.lineTo(0, -cr * 0.5);
+    ctx.stroke();
+    // The box, hanging below.
+    const bw = Math.max(3, 2.4 * k);
+    ctx.fillStyle = COLORS.crateBox;
+    ctx.fillRect(-bw / 2, -bw * 0.5, bw, bw);
+    ctx.strokeStyle = 'rgba(40, 30, 16, 0.7)';
+    ctx.lineWidth = Math.max(1, 0.1 * k);
+    ctx.strokeRect(-bw / 2, -bw * 0.5, bw, bw);
+    ctx.beginPath();
+    ctx.moveTo(-bw / 2, 0);
+    ctx.lineTo(bw / 2, 0);
+    ctx.stroke();
+  } else {
+    // Landed: the box on the ground, canopy flattened beside it.
+    const bw = Math.max(3, 2.4 * k);
+    ctx.fillStyle = COLORS.crateBox;
+    ctx.fillRect(-bw / 2, -bw, bw, bw);
+    ctx.strokeStyle = 'rgba(40, 30, 16, 0.7)';
+    ctx.lineWidth = Math.max(1, 0.1 * k);
+    ctx.strokeRect(-bw / 2, -bw, bw, bw);
+    ctx.fillStyle = COLORS.crateCanopy;
+    ctx.beginPath();
+    ctx.ellipse(bw * 1.3, -bw * 0.2, bw * 0.9, bw * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
 function drawCloud(ctx, basis, c) {
   const p = project(basis, [c.x, c.y, c.z]);
   if (!p) return;
@@ -600,6 +724,13 @@ export function drawScene(ctx, game, world, time) {
     const state = i < game.ringIndex ? 'done' : i === game.ringIndex ? 'next' : 'later';
     drawables.push({ d: ring.z - plane.z, fn: () => drawRing(ctx, basis, ring, state, time) });
   });
+  game.zones.forEach((zone) => {
+    const state = zone.done ? 'done' : zone === game.zones.find((z) => !z.done) ? 'next' : 'later';
+    drawables.push({ d: zone.z - plane.z, fn: () => drawZone(ctx, basis, world, zone, state, time) });
+  });
+  for (const crate of game.crates) {
+    drawables.push({ d: crate.z - plane.z, fn: () => drawCrate(ctx, basis, crate, time) });
+  }
   drawables.sort((a, b) => b.d - a.d);
   for (const item of drawables) item.fn();
 

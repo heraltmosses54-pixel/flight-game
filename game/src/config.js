@@ -61,6 +61,18 @@ export const GOLDEN = {
 // Combo window: rings flown within this many seconds of each other chain.
 export const COMBO_WINDOW = 12;
 
+// Supply drops: distance from the zone centre decides the band and the
+// points. A drop chains into the same combo as rings when it lands close
+// after the last score.
+export const DROP = {
+  bullseye: 6, // metres from the centre
+  inner: 12,
+  outer: 18, // the zone ring itself; past this the crate is a miss
+  points: { bullseye: 500, inner: 300, outer: 150 },
+  descent: 6, // m/s under the parachute
+  drag: 1.2, // per second the crate sheds its forward speed
+};
+
 // The palette: one warm late-afternoon style for sky, sea and land.
 export const COLORS = {
   skyTop: '#2e6db4',
@@ -81,6 +93,11 @@ export const COLORS = {
   ringNext: '#ffb52e',
   ringDone: '#58d68d',
   ringLater: '#e8f4ff',
+  zoneNext: '#ffb52e',
+  zoneDone: '#58d68d',
+  zoneLater: '#e8f4ff',
+  crateCanopy: '#e8722a',
+  crateBox: '#8a6b3f',
   planeRed: '#c0392b',
   planeCream: '#f5ead2',
   planeDark: '#2c2c34',
@@ -138,6 +155,21 @@ export const MISSIONS = [
     strip: { z: 8400, x: 0 },
     wind: 6,
     timeLimit: 240,
+  },
+  {
+    id: 'supply',
+    name: 'Supply Run',
+    brief: 'Three island drop zones. Fly low over each ring and press B to drop a crate — bullseye pays 500. Then land at Far Strip.',
+    start: { x: 0, y: 2, z: 120, heading: 0, speed: 0, throttle: 0, fuel: 100 },
+    rings: [],
+    zones: [
+      { x: -260, z: 1800, r: 18 },
+      { x: 300, z: 4200, r: 18 },
+      { x: -200, z: 6800, r: 18 },
+    ],
+    strip: { z: 10000, x: 0 },
+    wind: 1,
+    timeLimit: 0,
   },
 ];
 
