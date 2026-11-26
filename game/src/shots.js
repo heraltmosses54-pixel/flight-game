@@ -30,9 +30,10 @@ export function stageShot(game, shot, seed) {
     game.shotFreeze = true;
   };
   if (shot === '1-cover') {
-    // Golden-hour cockpit view, banking low over the town and the sea,
-    // the first ring big ahead and six lit gauges on the panel.
-    set(0, { x: 0, y: 85, z: 1250, heading: 0.03, pitch: 0.09, roll: 0.18, speed: 55, throttle: 0.85, fuel: 96, verticalSpeed: 4.5 });
+    // Golden-hour cockpit view over the river valley: the plane sits just
+    // west of the river (x~60 at z~1250), the river and jungle gorge walls
+    // reading ahead, the first ring big ahead and six lit gauges on the panel.
+    set(0, { x: 45, y: 78, z: 1150, heading: 0.1, pitch: 0.09, roll: 0.18, speed: 55, throttle: 0.85, fuel: 96, verticalSpeed: 4.5 });
     game.view = 'cockpit';
     game.lighting = 'golden';
     game.score = 2400;
@@ -41,9 +42,11 @@ export function stageShot(game, shot, seed) {
     game.elapsed = 42;
     game.say('First Delivery — ring 1 of 3 ahead', '#eaf6ff');
   } else if (shot === '2-rings') {
-    // Right on the second ring: the gold ring fills the view, HUD lit,
-    // the ring-burst still sparkling where the last ring was flown.
-    set(0, { x: -140, y: 95, z: 2800, heading: 0.02, pitch: 0.05, roll: -0.08, speed: 58, throttle: 0.7, fuel: 88, verticalSpeed: 2.5 });
+    // Right on the second ring: staged slightly east of the ring so the
+    // river (x~99 at z~3000) and gorge walls read in frame behind it —
+    // the gold ring still fills the view, HUD lit, the ring-burst still
+    // sparkling where the last ring was flown.
+    set(0, { x: -100, y: 100, z: 2820, heading: -0.1, pitch: 0.05, roll: -0.08, speed: 58, throttle: 0.7, fuel: 88, verticalSpeed: 2.5 });
     game.ringIndex = 1;
     game.score = 1000;
     game.combo = 1;

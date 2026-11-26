@@ -17,18 +17,32 @@ SLICES.push(5200);
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-// Mix two hex colours by t (0 = a, 1 = b).
+// Mix two colours by t (0 = a, 1 = b). Accepts '#rrggbb' or 'rgb(r,g,b)'
+// on either side and always returns a valid colour string, so chained
+// mixes stay valid: the old version only parsed hex, and a chained call
+// silently zeroed the first colour's channels (rock faces rendered black).
+function parseRgb(c) {
+  if (c.charAt(0) === '#') {
+    const p = parseInt(c.slice(1), 16);
+    return [(p >> 16) & 255, (p >> 8) & 255, p & 255];
+  }
+  const m = c.match(/\d+/g);
+  return m ? [+m[0], +m[1], +m[2]] : [0, 0, 0];
+}
+
 function mixHex(a, b, t) {
-  const pa = parseInt(a.slice(1), 16);
-  const pb = parseInt(b.slice(1), 16);
-  const r = Math.round(((pa >> 16) & 255) + (((pb >> 16) & 255) - ((pa >> 16) & 255)) * t);
-  const g = Math.round(((pa >> 8) & 255) + (((pb >> 8) & 255) - ((pa >> 8) & 255)) * t);
-  const bl = Math.round((pa & 255) + ((pb & 255) - (pa & 255)) * t);
+  const pa = parseRgb(a);
+  const pb = parseRgb(b);
+  const r = Math.round(pa[0] + (pb[0] - pa[0]) * t);
+  const g = Math.round(pa[1] + (pb[1] - pa[1]) * t);
+  const bl = Math.round(pa[2] + (pb[2] - pa[2]) * t);
   return `rgb(${r},${g},${bl})`;
 }
 
 const TERRAIN_COLOR = {
   sea: COLORS.seaNear,
+  river: COLORS.river,
+  jungle: COLORS.jungle,
   sand: COLORS.sand,
   grass: COLORS.grass[0],
   fieldA: COLORS.field[0],
@@ -157,7 +171,7 @@ function drawSky(ctx, basis, plane, time, storm, golden) {
   return horizonY;
 }
 
-function drawRidges(ctx, horizonY, world, roll, cockpit) {
+function drawRidges(ctx, horizonY, world, roll, cockpit, storm) {
   const a = roll * (cockpit ? 1.0 : 0.6);
   ctx.save();
   ctx.translate(CX, horizonY);
@@ -176,14 +190,17 @@ function drawRidges(ctx, horizonY, world, roll, cockpit) {
     ctx.closePath();
     ctx.fill();
   };
-  drawRidge(world.ridgeFar, 110, COLORS.mountainFar);
-  drawRidge(world.ridgeNear, 70, COLORS.mountainNear);
+  // In a storm the ridges darken to slate silhouettes, like the sky.
+  const far = storm ? mixHex(COLORS.mountainFar, COLORS.stormSlate, 0.6) : COLORS.mountainFar;
+  const near = storm ? mixHex(COLORS.mountainNear, COLORS.stormSlate, 0.6) : COLORS.mountainNear;
+  drawRidge(world.ridgeFar, 110, far);
+  drawRidge(world.ridgeNear, 70, near);
   ctx.restore();
 }
 
 // The ground as perspective slices: each slice is a band across the view,
 // split into lateral patches coloured by what the terrain is there.
-function drawGround(ctx, basis, world, golden) {
+function drawGround(ctx, basis, world, golden, storm) {
   const halfTan = (VIEW_W / 2 / FOCAL) * 1.06;
   for (let i = 0; i < SLICES.length - 1; i++) {
     const d0 = SLICES[i];
@@ -201,10 +218,14 @@ function drawGround(ctx, basis, world, golden) {
         const y = world.groundHeight(x, z);
         return [x, y, z];
       };
-      const a = project(basis, corner(d0, t0));
-      const b = project(basis, corner(d0, t1));
-      const c = project(basis, corner(d1, t1));
-      const d = project(basis, corner(d1, t0));
+      const w00 = corner(d0, t0);
+      const w01 = corner(d0, t1);
+      const w10 = corner(d1, t0);
+      const w11 = corner(d1, t1);
+      const a = project(basis, w00);
+      const b = project(basis, w01);
+      const c = project(basis, w11);
+      const d = project(basis, w10);
       if (!a || !b || !c || !d) continue;
       const mx = basis.cam[0] + basis.f[0] * ((d0 + d1) / 2);
       const mz = basis.cam[2] + basis.f[2] * ((d0 + d1) / 2);
@@ -215,8 +236,24 @@ function drawGround(ctx, basis, world, golden) {
         const gi = Math.abs(Math.floor(mx / 260) + Math.floor(mz / 260) * 3) % 4;
         color = COLORS.grass[gi];
       }
+      // Steep slopes read as rock/cliff faces instead of grass: the
+      // gradient comes from the patch's own corner heights, so it costs
+      // no extra groundHeight calls.
+      if (kind === 'grass' || kind === 'fieldA' || kind === 'fieldB' || kind === 'fieldC' || kind === 'jungle') {
+        const latW = Math.max(1, (Math.hypot(w01[0] - w00[0], w01[2] - w00[2]) + Math.hypot(w11[0] - w10[0], w11[2] - w10[2])) / 2);
+        const latSlope = ((w01[1] + w11[1] - w00[1] - w10[1]) / 2) / latW;
+        const lonSlope = ((w10[1] + w11[1] - w00[1] - w01[1]) / 2) / Math.max(1, d1 - d0);
+        const slope = Math.hypot(latSlope, lonSlope);
+        const rockT = clamp((slope - 0.35) / 0.35, 0, 1);
+        if (rockT > 0) color = mixHex(color, COLORS.rock, rockT * 0.85);
+      }
+      // In a storm the whole ground darkens toward slate, and the haze
+      // goes dark too — the bright day-green ground is what used to make
+      // the storm shot read as fair weather.
+      if (storm) color = mixHex(color, COLORS.stormSlate, 0.55);
       const hazeAmt = clamp(((d0 + d1) / 2 / 3400), 0, 0.72);
-      quad(ctx, a, b, c, d, mixHex(color, golden ? GOLDEN.hazeMix : '#cfe3ee', hazeAmt));
+      const hazeMix = storm ? COLORS.stormHaze : golden ? GOLDEN.hazeMix : '#cfe3ee';
+      quad(ctx, a, b, c, d, mixHex(color, hazeMix, hazeAmt));
     }
   }
 }
@@ -290,6 +327,71 @@ function drawRunway(ctx, basis, strip, plane) {
         ctx.fill();
       }
     }
+  }
+}
+
+// The bridge over the river: a wooden deck spanning the gorge, with rails
+// and tapered stone piers down to the river banks. The deck slopes gently
+// between its two bank heights, like drawRunway it is built by projecting
+// sampled points along its length.
+function drawBridge(ctx, basis, world, storm) {
+  const b = world.bridge;
+  if (!b) return;
+  const deck = storm ? mixHex('#7a5a38', COLORS.stormSlate, 0.55) : '#7a5a38';
+  const rail = storm ? mixHex('#5d4326', COLORS.stormSlate, 0.55) : '#5d4326';
+  const pier = storm ? mixHex('#8a8578', COLORS.stormSlate, 0.55) : '#8a8578';
+  const deckYAt = (x) => b.deckY0 + (b.deckY1 - b.deckY0) * ((x - b.x0) / (b.x1 - b.x0));
+  // Deck top surface: a band 8m wide (along z) at the deck height.
+  const top = [];
+  const bottom = [];
+  for (let x = b.x0; x <= b.x1; x += 5) {
+    const l = project(basis, [x, deckYAt(x), b.z - 4]);
+    const r = project(basis, [x, deckYAt(x), b.z + 4]);
+    if (l && r) {
+      top.push(l);
+      bottom.push(r);
+    }
+  }
+  if (top.length < 2) return;
+  ctx.fillStyle = deck;
+  ctx.beginPath();
+  ctx.moveTo(top[0].x, top[0].y);
+  for (const p of top) ctx.lineTo(p.x, p.y);
+  for (let i = bottom.length - 1; i >= 0; i--) ctx.lineTo(bottom[i].x, bottom[i].y);
+  ctx.closePath();
+  ctx.fill();
+  // Rails: thin vertical strips 1.1m above the deck along both edges.
+  for (const zo of [-3.2, 3.2]) {
+    const aPts = [];
+    const bPts = [];
+    for (let x = b.x0; x <= b.x1; x += 5) {
+      const pA = project(basis, [x, deckYAt(x), b.z + zo]);
+      const pB = project(basis, [x, deckYAt(x) + 1.1, b.z + zo]);
+      if (pA && pB) {
+        aPts.push(pA);
+        bPts.push(pB);
+      }
+    }
+    if (aPts.length < 2) continue;
+    ctx.fillStyle = rail;
+    ctx.beginPath();
+    ctx.moveTo(aPts[0].x, aPts[0].y);
+    for (const p of aPts) ctx.lineTo(p.x, p.y);
+    for (let i = bPts.length - 1; i >= 0; i--) ctx.lineTo(bPts[i].x, bPts[i].y);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Stone piers: tapered quads from the river bed up to the deck.
+  for (const fx of [0.28, 0.5, 0.72]) {
+    const x = b.x0 + (b.x1 - b.x0) * fx;
+    const gy = world.groundHeight(x, b.z);
+    const ty = deckYAt(x);
+    if (ty - gy < 2) continue;
+    const bl = project(basis, [x - 2.2, gy, b.z]);
+    const br = project(basis, [x + 2.2, gy, b.z]);
+    const tr = project(basis, [x + 1.2, ty, b.z]);
+    const tl = project(basis, [x - 1.2, ty, b.z]);
+    if (bl && br && tr && tl) quad(ctx, bl, br, tr, tl, pier);
   }
 }
 
@@ -668,6 +770,49 @@ function drawPlane(ctx, plane, time, groundY) {
   ctx.beginPath();
   ctx.ellipse(0, -22, 10, 15, 0, 0, Math.PI * 2);
   ctx.fill();
+  // Engine nacelle: the propeller engine mounts directly onto the nose
+  // as its own bolt-on pod (KSP prop-attached ref) — a short metal
+  // cylinder, narrower than the fuselage, running from the cowling to
+  // the prop hub, with a mounting flange at its base, panel seams, and
+  // a ring of fasteners around its front face. The spinner sits on that
+  // front face, not on the bare nose.
+  const nacGrad = ctx.createLinearGradient(-13, 0, 13, 0);
+  nacGrad.addColorStop(0, '#878d94');
+  nacGrad.addColorStop(0.3, '#d7dade');
+  nacGrad.addColorStop(0.65, '#c3c8cd');
+  nacGrad.addColorStop(1, '#7e848b');
+  ctx.fillStyle = nacGrad;
+  ctx.fillRect(-13, -58, 26, 13);
+  // Mounting flange where the pod bolts onto the cowling.
+  ctx.fillStyle = '#3a3d42';
+  ctx.fillRect(-14, -47, 28, 2.5);
+  // Panel seams ringing the pod.
+  ctx.strokeStyle = 'rgba(40, 42, 48, 0.55)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-13, -51);
+  ctx.lineTo(13, -51);
+  ctx.moveTo(-13, -54.5);
+  ctx.lineTo(13, -54.5);
+  ctx.stroke();
+  // Front face: foreshortened ellipse, darker metal, with a ring of
+  // fasteners around its rim — the KSP engine's bolted front face.
+  ctx.fillStyle = '#6a6f76';
+  ctx.beginPath();
+  ctx.ellipse(0, -58, 13, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(30, 30, 36, 0.6)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(0, -58, 13, 4, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(30, 30, 36, 0.85)';
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * 11, -58 + Math.sin(a) * 3.1, 1, 0, Math.PI * 2);
+    ctx.fill();
+  }
   // Spinning propeller.
   const spin = time * 28;
   ctx.save();
@@ -769,9 +914,10 @@ export function drawScene(ctx, game, world, time) {
   ctx.save();
 
   const horizonY = drawSky(ctx, basis, plane, time, storm, golden);
-  drawRidges(ctx, horizonY, world, plane.roll, cockpit);
-  drawGround(ctx, basis, world, golden);
+  drawRidges(ctx, horizonY, world, plane.roll, cockpit, storm);
+  drawGround(ctx, basis, world, golden, storm);
   for (const strip of game.strips) drawRunway(ctx, basis, strip, plane);
+  if (world.bridge) drawBridge(ctx, basis, world, storm);
 
   // Billboards far to near: clouds, objects, rings.
   const drawables = [];

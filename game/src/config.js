@@ -82,6 +82,11 @@ export const COLORS = {
   sunGlow: 'rgba(255, 236, 170, 0.55)',
   seaFar: '#3f7fa8',
   seaNear: '#2f6b8f',
+  river: '#2fa896', // clear blue-green river water, distinct from the sea
+  jungle: '#2f6b2a', // dense dark-green forest
+  rock: '#8d7d6b', // grey-brown cliff faces on steep slopes
+  stormSlate: '#3d4757', // dark slate the storm mixes the ground toward
+  stormHaze: '#4a5568', // dark haze mix for storm ground slices
   haze: 'rgba(246, 207, 143, 0.35)',
   mountainFar: '#7d94b5',
   mountainNear: '#5d7a8c',
