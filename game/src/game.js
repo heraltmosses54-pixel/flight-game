@@ -1,10 +1,11 @@
 // The game itself: states (menu, briefing, flying, landed, crashed,
 // paused), missions, rings, scoring and the message feed.
 
-import { MISSIONS, STRIPS, DAMAGE } from './config.js';
+import { MISSIONS, STRIPS, DAMAGE, COMBO_WINDOW } from './config.js';
 import { buildWorld } from './world.js';
 import { makePlane, stepPlane, crossedRing } from './physics.js';
 import { makeNoise1D } from './rng.js';
+import { makeParticles } from './particles.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -41,6 +42,15 @@ export function makeGame(canvas) {
     wind: 0,
     gustNoise: makeNoise1D(99),
     score: 0,
+    ringScore: 0, // points banked from rings (with combo multipliers)
+    combo: 0, // consecutive rings inside COMBO_WINDOW
+    comboTimer: 0,
+    lastRingAt: -999,
+    fuelWarned: false, // latched: the low-fuel callout fires once per flight
+    view: 'chase', // chase | cockpit (C key toggles)
+    lighting: 'day', // day | golden
+    trailTimer: 0,
+    particles: makeParticles(),
     messages: [],
     best: loadBest(),
     menuHover: -1,
@@ -66,6 +76,11 @@ export function makeGame(canvas) {
     game.wind = mission.wind;
     game.elapsed = 0;
     game.score = 0;
+    game.ringScore = 0;
+    game.combo = 0;
+    game.comboTimer = 0;
+    game.lastRingAt = -999;
+    game.fuelWarned = false;
     game.messages = [];
     game.missionComplete = false;
     game.landingRating = '';
@@ -86,6 +101,11 @@ export function makeGame(canvas) {
     game.wind = 1;
     game.elapsed = 0;
     game.score = 0;
+    game.ringScore = 0;
+    game.combo = 0;
+    game.comboTimer = 0;
+    game.lastRingAt = -999;
+    game.fuelWarned = false;
     game.messages = [];
     game.missionComplete = false;
     game.freeFlight = true;
@@ -106,20 +126,24 @@ export function makeGame(canvas) {
   game.finishFlight = (landed) => {
     game.state = landed ? 'landed' : 'crashed';
     const p = game.plane;
-    // Score: rings are worth 1000 each, a clean landing pays, damage costs.
-    let score = game.ringIndex * 1000;
+    // Score: rings bank their points live (with the combo multiplier); a
+    // clean landing pays, damage costs. A chained combo also multiplies
+    // the landing bonus: fly clean, land clean.
+    let score = game.ringScore;
     if (landed) {
       const sink = -p.verticalSpeed;
+      let landingBonus = 0;
       if (sink < 1.5 && p.damage === 0) {
         game.landingRating = 'Butter smooth';
-        score += 600;
+        landingBonus = 600;
       } else if (sink < 3) {
         game.landingRating = 'Firm but fair';
-        score += 300;
+        landingBonus = 300;
       } else {
         game.landingRating = 'A bit of a thump';
-        score += 100;
+        landingBonus = 100;
       }
+      score += Math.round(landingBonus * (1 + 0.2 * Math.max(0, game.combo - 1)));
       if (game.ringIndex === game.rings.length && game.rings.length > 0) {
         game.missionComplete = true;
         score += 500;
@@ -166,16 +190,41 @@ export function makeGame(canvas) {
     }
 
     // Rings: crossing the next ring's plane inside its radius scores it.
+    // Rings chained inside the combo window multiply: x1, x1.25, x1.5...
     if (game.ringIndex < game.rings.length) {
       const ring = game.rings[game.ringIndex];
       if (crossedRing(p, game.prevZ, ring)) {
         game.ringIndex++;
-        game.score += 1000;
+        game.combo = game.elapsed - game.lastRingAt <= COMBO_WINDOW ? game.combo + 1 : 1;
+        game.lastRingAt = game.elapsed;
+        game.comboTimer = COMBO_WINDOW;
+        const gained = Math.round(1000 * (1 + 0.25 * (game.combo - 1)));
+        game.ringScore += gained;
+        game.score += gained;
+        game.particles.burst(ring.x, ring.y, ring.z);
         game.audio?.chime(true);
-        game.say(game.ringIndex === game.rings.length ? 'All rings flown — now land at the strip.' : `Ring ${game.ringIndex} of ${game.rings.length} — nice flying.`, '#58d68d');
+        game.say(game.combo > 1
+          ? `Ring ${game.ringIndex} of ${game.rings.length} — COMBO x${game.combo}, +${gained}!`
+          : game.ringIndex === game.rings.length ? 'All rings flown — now land at the strip.' : `Ring ${game.ringIndex} of ${game.rings.length} — nice flying.`, '#58d68d');
       }
     }
     game.prevZ = p.z;
+
+    // The combo decays: stop chaining rings and it fades out.
+    if (game.comboTimer > 0) {
+      game.comboTimer -= dt;
+      if (game.comboTimer <= 0) game.combo = 0;
+    }
+
+    // Engine trail: a faint wisp behind the plane while the throttle works.
+    if (p.airborne && p.throttle > 0.5) {
+      game.trailTimer -= dt;
+      if (game.trailTimer <= 0) {
+        game.trailTimer = 0.09;
+        game.particles.trail(p.x - Math.sin(p.heading) * 8, p.y - 0.5, p.z - Math.cos(p.heading) * 8);
+      }
+    }
+    game.particles.update(dt);
 
     // Time limit (Storm Run): out of time ends the flight as a crash of sorts.
     if (game.timeLimit > 0 && game.elapsed > game.timeLimit && !p.landed) {
@@ -185,17 +234,22 @@ export function makeGame(canvas) {
       return;
     }
     if (p.landed) {
+      game.particles.dust(p.x, p.y, p.z);
       game.finishFlight(true);
       game.audio?.chime(true);
       return;
     }
     if (p.crashed) {
+      game.particles.dust(p.x, p.y, p.z, true);
       game.finishFlight(false);
       game.audio?.chime(false);
       return;
     }
-    // Fuel warnings at the quarter mark.
-    if (p.fuel < 25 && p.fuel > 24.5) game.say('Fuel low — plan your landing now.', '#ffb52e');
+    // Fuel warnings at the quarter mark — latched, so it fires once.
+    if (p.fuel < 25 && !game.fuelWarned) {
+      game.fuelWarned = true;
+      game.say('Fuel low — plan your landing now.', '#ffb52e');
+    }
     if (p.fuel <= 0 && !game.saidGlide) {
       game.saidGlide = true;
       game.say('Engine out — glide her down, pick a strip.', '#ff5d4d');

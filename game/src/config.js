@@ -45,6 +45,22 @@ export const LANDING = {
   runwayHalfWidth: 16,
 };
 
+// Golden-hour light: a warm sunset palette used for the cover staging
+// (and any shot that sets game.lighting = 'golden').
+export const GOLDEN = {
+  skyTop: '#4a2a63',
+  skyMid: '#c65a3c',
+  skyLow: '#ffb85e',
+  sun: '#ffe9a8',
+  sunGlow: 'rgba(255, 180, 90, 0.65)',
+  seaFar: '#8a4a52',
+  haze: 'rgba(255, 170, 90, 0.42)',
+  hazeMix: '#f2b06a',
+};
+
+// Combo window: rings flown within this many seconds of each other chain.
+export const COMBO_WINDOW = 12;
+
 // The palette: one warm late-afternoon style for sky, sea and land.
 export const COLORS = {
   skyTop: '#2e6db4',

@@ -3,7 +3,8 @@
 // ground is drawn as perspective slices, and objects, rings and clouds are
 // projected billboards sorted far to near.
 
-import { VIEW_W, VIEW_H, COLORS } from './config.js';
+import { VIEW_W, VIEW_H, COLORS, GOLDEN } from './config.js';
+import { drawCockpit } from './cockpit.js';
 
 const FOCAL = 560;
 const CX = VIEW_W / 2;
@@ -35,32 +36,35 @@ const TERRAIN_COLOR = {
   fieldC: COLORS.field[2],
 };
 
-// The camera basis from the plane's heading and pitch. The camera rolls
-// part-way with the plane (60%): the horizon tilts the right way when the
-// plane banks, and the plane itself is drawn with the rest of the bank.
-function cameraBasis(plane) {
+// The camera basis from the plane's heading and pitch. In chase view the
+// camera rolls part-way with the plane (60%): the horizon tilts the right
+// way when the plane banks, and the plane itself is drawn with the rest of
+// the bank. In cockpit view the camera sits at the pilot's seat and rolls
+// fully with the plane, so the world banks around a fixed dashboard.
+function cameraBasis(plane, cockpit) {
   const h = plane.heading;
   const p = plane.pitch;
   const f = [Math.sin(h) * Math.cos(p), Math.sin(p), Math.cos(h) * Math.cos(p)];
   const r = [Math.cos(h), 0, -Math.sin(h)];
   const u = [-Math.sin(h) * Math.sin(p), Math.cos(p), -Math.cos(h) * Math.sin(p)];
   // Roll the camera's right/up vectors around the forward axis.
-  const a = plane.roll * 0.6;
+  const a = plane.roll * (cockpit ? 1.0 : 0.6);
   const cosA = Math.cos(a);
   const sinA = Math.sin(a);
   const r2 = [r[0] * cosA - u[0] * sinA, r[1] * cosA - u[1] * sinA, r[2] * cosA - u[2] * sinA];
   const u2 = [u[0] * cosA + r[0] * sinA, u[1] * cosA + r[1] * sinA, u[2] * cosA + r[2] * sinA];
-  // On the ground the camera pulls back and up a little, so the strip and
-  // the plane both read; it settles to the chase position as speed builds.
+  // On the ground the chase camera pulls back and up a little, so the strip
+  // and the plane both read; it settles to the chase position as speed
+  // builds. The cockpit camera stays at the seat.
   const slow = Math.max(0, 20 - plane.speed);
-  const dist = 13 + slow * 0.22;
-  const height = 4.2 + slow * 0.18;
+  const dist = cockpit ? -2.5 : 13 + slow * 0.22;
+  const height = cockpit ? 1.1 : 4.2 + slow * 0.18;
   const cam = [
     plane.x - f[0] * dist,
     plane.y - f[1] * dist + height,
     plane.z - f[2] * dist,
   ];
-  return { f, r: r2, u: u2, cam };
+  return { f, r: r2, u: u2, cam, cockpit };
 }
 
 // Project a world point to the screen. Returns null when behind the camera.
@@ -86,12 +90,12 @@ function quad(ctx, a, b, c, d, fill) {
   ctx.fill();
 }
 
-function drawSky(ctx, basis, plane, time, storm) {
+function drawSky(ctx, basis, plane, time, storm, golden) {
   const horizonY = CY - Math.tan(plane.pitch) * FOCAL;
   // The sky and the haze are drawn in a frame tilted with the camera's
   // roll, so the horizon band follows the tilted ground horizon. The sun
   // is a projected point and is drawn unrotated below.
-  const a = plane.roll * 0.6;
+  const a = plane.roll * (basis.cockpit ? 1.0 : 0.6);
   ctx.save();
   ctx.translate(CX, horizonY);
   ctx.rotate(-a);
@@ -101,12 +105,16 @@ function drawSky(ctx, basis, plane, time, storm) {
     g.addColorStop(0, '#3d4a63');
     g.addColorStop(0.45, '#6d7d99');
     g.addColorStop(0.62, '#c9b48a');
+  } else if (golden) {
+    g.addColorStop(0, GOLDEN.skyTop);
+    g.addColorStop(0.45, GOLDEN.skyMid);
+    g.addColorStop(0.62, GOLDEN.skyLow);
   } else {
     g.addColorStop(0, COLORS.skyTop);
     g.addColorStop(0.45, COLORS.skyMid);
     g.addColorStop(0.62, COLORS.skyLow);
   }
-  g.addColorStop(1, COLORS.seaFar);
+  g.addColorStop(1, golden ? GOLDEN.seaFar : COLORS.seaFar);
   ctx.fillStyle = g;
   // Drawn oversize: the world frame rolls with the plane, and the sky
   // must still cover the corners.
@@ -115,14 +123,17 @@ function drawSky(ctx, basis, plane, time, storm) {
   // Haze band hugging the horizon.
   const haze = ctx.createLinearGradient(0, horizonY - 70, 0, horizonY + 30);
   haze.addColorStop(0, 'rgba(246, 207, 143, 0)');
-  haze.addColorStop(0.6, COLORS.haze);
+  haze.addColorStop(0.6, golden ? GOLDEN.haze : COLORS.haze);
   haze.addColorStop(1, 'rgba(246, 207, 143, 0)');
   ctx.fillStyle = haze;
   ctx.fillRect(-320, horizonY - 70, VIEW_W + 640, 100);
   ctx.restore();
 
   // The sun: a fixed direction in the world, projected like anything else.
-  const sunDir = [Math.sin(-0.7), 0.34, Math.cos(-0.7)];
+  // Golden hour drops it low and makes it bigger.
+  const sunDir = golden
+    ? [Math.sin(-0.7), 0.13, Math.cos(-0.7)]
+    : [Math.sin(-0.7), 0.34, Math.cos(-0.7)];
   const sunPoint = [
     basis.cam[0] + sunDir[0] * 8000,
     basis.cam[1] + sunDir[1] * 8000,
@@ -130,21 +141,22 @@ function drawSky(ctx, basis, plane, time, storm) {
   ];
   const s = project(basis, sunPoint);
   if (s) {
-    const glow = ctx.createRadialGradient(s.x, s.y, 4, s.x, s.y, 130);
-    glow.addColorStop(0, COLORS.sunGlow);
+    const glow = ctx.createRadialGradient(s.x, s.y, 4, s.x, s.y, golden ? 190 : 130);
+    glow.addColorStop(0, golden ? GOLDEN.sunGlow : COLORS.sunGlow);
     glow.addColorStop(1, 'rgba(255, 236, 170, 0)');
     ctx.fillStyle = glow;
-    ctx.fillRect(s.x - 130, s.y - 130, 260, 260);
-    ctx.fillStyle = COLORS.sun;
+    const gr = golden ? 190 : 130;
+    ctx.fillRect(s.x - gr, s.y - gr, gr * 2, gr * 2);
+    ctx.fillStyle = golden ? GOLDEN.sun : COLORS.sun;
     ctx.beginPath();
-    ctx.arc(s.x, s.y, 26, 0, Math.PI * 2);
+    ctx.arc(s.x, s.y, golden ? 34 : 26, 0, Math.PI * 2);
     ctx.fill();
   }
   return horizonY;
 }
 
-function drawRidges(ctx, horizonY, world, roll) {
-  const a = roll * 0.6;
+function drawRidges(ctx, horizonY, world, roll, cockpit) {
+  const a = roll * (cockpit ? 1.0 : 0.6);
   ctx.save();
   ctx.translate(CX, horizonY);
   ctx.rotate(-a);
@@ -169,7 +181,7 @@ function drawRidges(ctx, horizonY, world, roll) {
 
 // The ground as perspective slices: each slice is a band across the view,
 // split into lateral patches coloured by what the terrain is there.
-function drawGround(ctx, basis, world) {
+function drawGround(ctx, basis, world, golden) {
   const halfTan = (VIEW_W / 2 / FOCAL) * 1.06;
   for (let i = 0; i < SLICES.length - 1; i++) {
     const d0 = SLICES[i];
@@ -202,13 +214,15 @@ function drawGround(ctx, basis, world) {
         color = COLORS.grass[gi];
       }
       const hazeAmt = clamp(((d0 + d1) / 2 / 3400), 0, 0.72);
-      quad(ctx, a, b, c, d, mixHex(color, '#cfe3ee', hazeAmt));
+      quad(ctx, a, b, c, d, mixHex(color, golden ? GOLDEN.hazeMix : '#cfe3ee', hazeAmt));
     }
   }
 }
 
 // A runway: a flat grey band with a dashed centreline and threshold bars.
-function drawRunway(ctx, basis, strip) {
+// On approach, PAPI lights beside the threshold show the glidepath:
+// 4 white = too high, 2 white 2 red = on slope, 4 red = too low.
+function drawRunway(ctx, basis, strip, plane) {
   const z0 = strip.z - 450;
   const z1 = strip.z + 450;
   const top = [];
@@ -246,6 +260,33 @@ function drawRunway(ctx, basis, strip) {
       const c = project(basis, [strip.x + k * 6 + 2, 2.4, zt]);
       const d2 = project(basis, [strip.x + k * 6 - 2, 2.4, zt + 18]);
       if (a && b && c && d2) quad(ctx, a, b, c, d2, COLORS.runwayEdge);
+    }
+  }
+  // PAPI lights beside the threshold, lit for the approaching plane.
+  if (plane) {
+    const threshold = strip.z - 450;
+    const d = threshold - plane.z;
+    if (d > 0 && d < 2000 && Math.abs(plane.x - strip.x) < 250) {
+      const ideal = 2 + d * 0.0524; // 3-degree glidepath
+      const dev = plane.y - ideal;
+      const whites = dev > 15 ? 4 : dev > 6 ? 3 : dev > -6 ? 2 : dev > -15 ? 1 : 0;
+      for (let i = 0; i < 4; i++) {
+        const lp = project(basis, [strip.x + 26 + i * 9, 3.5, threshold + 8]);
+        if (!lp) continue;
+        const lr = clamp(420 / Math.max(d, 60), 4, 11);
+        const white = i < whites;
+        const glow = ctx.createRadialGradient(lp.x, lp.y, 1, lp.x, lp.y, lr * 2.2);
+        glow.addColorStop(0, white ? 'rgba(255,255,255,0.9)' : 'rgba(255,59,48,0.9)');
+        glow.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(lp.x, lp.y, lr * 2.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = white ? '#ffffff' : '#ff3b30';
+        ctx.beginPath();
+        ctx.arc(lp.x, lp.y, lr, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 }
@@ -486,13 +527,15 @@ function drawRain(ctx, time) {
 export function drawScene(ctx, game, world, time) {
   const plane = game.plane;
   const storm = game.mission && game.mission.id === 'storm';
-  const basis = cameraBasis(plane);
+  const golden = game.lighting === 'golden';
+  const cockpit = game.view === 'cockpit';
+  const basis = cameraBasis(plane, cockpit);
   ctx.save();
 
-  const horizonY = drawSky(ctx, basis, plane, time, storm);
-  drawRidges(ctx, horizonY, world, plane.roll);
-  drawGround(ctx, basis, world);
-  for (const strip of game.strips) drawRunway(ctx, basis, strip);
+  const horizonY = drawSky(ctx, basis, plane, time, storm, golden);
+  drawRidges(ctx, horizonY, world, plane.roll, cockpit);
+  drawGround(ctx, basis, world, golden);
+  for (const strip of game.strips) drawRunway(ctx, basis, strip, plane);
 
   // Billboards far to near: clouds, objects, rings.
   const drawables = [];
@@ -516,7 +559,22 @@ export function drawScene(ctx, game, world, time) {
     ctx.fill();
   }
 
-  drawPlane(ctx, plane, time, gy);
+  // Particles: ring bursts, landing dust, engine trail.
+  for (const pt of game.particles.list) {
+    const pp = project(basis, [pt.x, pt.y, pt.z]);
+    if (!pp) continue;
+    const ps = clamp((pt.size * FOCAL) / pp.d, 1, 26);
+    ctx.globalAlpha = clamp(pt.life / pt.maxLife, 0, 1) * 0.85;
+    ctx.fillStyle = pt.color;
+    ctx.beginPath();
+    ctx.arc(pp.x, pp.y, ps, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Chase view shows the plane; cockpit view shows the dashboard instead.
+  if (!cockpit) drawPlane(ctx, plane, time, gy);
   if (storm) drawRain(ctx, time);
+  if (cockpit) drawCockpit(ctx, game, time);
   ctx.restore();
 }

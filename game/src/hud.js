@@ -140,45 +140,193 @@ function attitudeBall(ctx, x, y, r, roll, pitch) {
   ctx.stroke();
 }
 
+// Live score and combo, top left: the points banked so far and the chain.
+function drawScorePanel(ctx, game) {
+  panel(ctx, 16, 14, 210, 56);
+  text(ctx, `SCORE ${game.score.toLocaleString('en-US')}`, 28, 32, 18, COLORS.ringNext, 'left');
+  if (game.combo > 1) {
+    text(ctx, `COMBO x${game.combo} · ${Math.ceil(game.comboTimer)}s`, 28, 56, 13, '#ffd98a', 'left');
+  } else if (game.rings.length > 0) {
+    text(ctx, `RINGS ${game.ringIndex}/${game.rings.length}`, 28, 56, 12, COLORS.hudDim, 'left');
+  }
+}
+
+// The chart: a top-down minimap of the island chain — strips named, rings
+// marked, the plane a triangle turning with its heading.
+function drawMinimap(ctx, game) {
+  const x0 = VIEW_W - 176;
+  const y0 = VIEW_H - 184;
+  const w = 160;
+  const h = 160;
+  panel(ctx, x0, y0, w, h, 0.6);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x0, y0, w, h);
+  ctx.clip();
+  const mx = (x) => x0 + ((x + 2400) / 4800) * w;
+  const mz = (z) => y0 + ((z + 600) / 12400) * h;
+  ctx.fillStyle = '#2f6b8f';
+  ctx.fillRect(x0, y0, w, h);
+  for (const isl of game.world.islands || []) {
+    ctx.fillStyle = '#6da24f';
+    ctx.beginPath();
+    ctx.ellipse(mx(isl.x), mz(isl.z), (isl.r / 4800) * w, (isl.r / 12400) * h, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (const strip of game.strips) {
+    ctx.fillStyle = '#e8e8e8';
+    ctx.fillRect(mx(strip.x) - 2, mz(strip.z - 450), 4, (900 / 12400) * h);
+    text(ctx, strip.name.replace(' Strip', ''), mx(strip.x) + 6, mz(strip.z), 8, COLORS.hud, 'left');
+  }
+  game.rings.forEach((ring, i) => {
+    ctx.strokeStyle = i < game.ringIndex ? COLORS.hudGood : i === game.ringIndex ? COLORS.ringNext : 'rgba(234, 246, 255, 0.7)';
+    ctx.lineWidth = i === game.ringIndex ? 2.5 : 1.5;
+    ctx.beginPath();
+    ctx.arc(mx(ring.x), mz(ring.z), Math.max(3, (ring.r / 4800) * w), 0, Math.PI * 2);
+    ctx.stroke();
+  });
+  // The plane.
+  const p = game.plane;
+  ctx.save();
+  ctx.translate(mx(p.x), mz(p.z));
+  ctx.rotate(-p.heading);
+  ctx.fillStyle = '#ffb52e';
+  ctx.beginPath();
+  ctx.moveTo(0, 7);
+  ctx.lineTo(-5, -5);
+  ctx.lineTo(5, -5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  ctx.restore();
+  text(ctx, 'CHART — SALTWIND ISLES', x0 + w / 2, y0 + h - 9, 9, COLORS.hudDim, 'center');
+}
+
+// Glidepath deviation from a 3-degree approach to a strip threshold.
+function glideDeviation(p, stripZ) {
+  const d = stripZ - 450 - p.z;
+  const ideal = 2 + d * 0.0524;
+  return { d, dev: p.y - ideal };
+}
+
+// PAPI callout: how many of the four lights are white, and the words.
+function papiWords(dev) {
+  if (dev > 15) return { whites: 4, words: 'TOO HIGH — 4 WHITE' };
+  if (dev > 6) return { whites: 3, words: 'HIGH — 3 WHITE 1 RED' };
+  if (dev > -6) return { whites: 2, words: 'ON SLOPE — 2 WHITE 2 RED' };
+  if (dev > -15) return { whites: 1, words: 'LOW — 1 WHITE 3 RED' };
+  return { whites: 0, words: 'TOO LOW — 4 RED' };
+}
+
+// The approach panel: PAPI lights, slope words and a glidepath ladder,
+// shown whenever the plane is lined up on the destination strip.
+function drawApproach(ctx, game) {
+  const p = game.plane;
+  const mission = game.mission;
+  if (!mission) return;
+  const stripZ = mission.strip.z;
+  const { d, dev } = glideDeviation(p, stripZ);
+  if (d <= 0 || d > 1800 || Math.abs(p.x - mission.strip.x) > 300) return;
+  const papi = papiWords(dev);
+  const x = 16;
+  const y = 492;
+  const w = 236;
+  const h = 92;
+  panel(ctx, x, y, w, h, 0.62);
+  const final = d < 600;
+  text(ctx, final ? 'SHORT FINAL' : 'ON APPROACH', x + 12, y + 14, 12, final ? COLORS.ringNext : COLORS.hud, 'left');
+  text(ctx, `${Math.round(d)} m to ${game.stripName}`, x + w - 12, y + 14, 11, COLORS.hudDim, 'right');
+  // PAPI dots.
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = i < papi.whites ? '#ffffff' : '#ff3b30';
+    ctx.beginPath();
+    ctx.arc(x + 22 + i * 18, y + 38, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(234, 246, 255, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  text(ctx, papi.words, x + 100, y + 38, 11, papi.whites === 2 ? COLORS.hudGood : COLORS.hudWarn, 'left');
+  // Glidepath ladder: the ideal line in the middle, the plane's marker.
+  const lx = x + w - 30;
+  const ly0 = y + 26;
+  const ly1 = y + 78;
+  ctx.strokeStyle = 'rgba(234, 246, 255, 0.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(lx, ly0);
+  ctx.lineTo(lx, ly1);
+  ctx.stroke();
+  const mid = (ly0 + ly1) / 2;
+  ctx.strokeStyle = COLORS.hudGood;
+  ctx.beginPath();
+  ctx.moveTo(lx - 8, mid);
+  ctx.lineTo(lx + 8, mid);
+  ctx.stroke();
+  const off = clamp(dev / 30, -1, 1) * ((ly1 - ly0) / 2 - 4);
+  ctx.fillStyle = '#ffb52e';
+  ctx.beginPath();
+  ctx.moveTo(lx - 7, mid - off);
+  ctx.lineTo(lx + 7, mid - off);
+  ctx.lineTo(lx, mid - off + (dev >= 0 ? -6 : 6));
+  ctx.closePath();
+  ctx.fill();
+  text(ctx, 'GLIDE', lx, y + 86, 8, COLORS.hudDim, 'center');
+  if (final) text(ctx, `FULL FLAP · ${Math.round(p.speed * 1.944)} KT`, x + 12, y + 68, 12, COLORS.hud, 'left');
+  else text(ctx, `SINK ${p.verticalSpeed.toFixed(1)} m/s · ${Math.round(p.speed * 1.944)} KT`, x + 12, y + 68, 11, COLORS.hudDim, 'left');
+}
+
 // The flight HUD: tapes, bars, the attitude ball and the mission banner.
 export function drawHud(ctx, game, time) {
   const p = game.plane;
   const knots = p.speed * 1.944;
   const altM = Math.max(0, p.y);
   const headingDeg = ((p.heading * 180) / Math.PI % 360 + 360) % 360;
+  const cockpit = game.view === 'cockpit';
 
-  verticalTape(ctx, 16, 60, 86, 190, knots, 10, 'kt', 'AIRSPEED');
-  verticalTape(ctx, 16, 268, 86, 190, altM, 50, 'm', 'ALTITUDE');
-  text(ctx, `VSI ${p.verticalSpeed >= 0 ? '+' : ''}${p.verticalSpeed.toFixed(1)} m/s`, 16, 478, 12, COLORS.hudDim);
-  headingTape(ctx, headingDeg);
+  // Score and combo are always on screen, in either view.
+  drawScorePanel(ctx, game);
+  drawMinimap(ctx, game);
+  drawApproach(ctx, game);
 
-  // Right side: fuel, damage, throttle.
-  const rx = VIEW_W - 196;
-  barGauge(ctx, rx, 66, 150, 'FUEL', p.fuel / 100, COLORS.hudGood, 0.25);
-  barGauge(ctx, rx, 100, 150, 'DAMAGE', p.damage / 100, COLORS.hudBad, 0.99);
-  barGauge(ctx, rx, 134, 150, 'THROTTLE', p.throttle, '#7fb2dd', -1);
-  if (p.fuel <= 25 && p.fuel > 0 && Math.floor(time * 2) % 2 === 0) {
-    text(ctx, 'LOW FUEL', rx, 168, 13, COLORS.hudWarn, 'left');
+  // In cockpit view the dashboard gauges replace the tapes and bars.
+  if (!cockpit) {
+    verticalTape(ctx, 16, 76, 86, 190, knots, 10, 'kt', 'AIRSPEED');
+    verticalTape(ctx, 16, 284, 86, 190, altM, 50, 'm', 'ALTITUDE');
+    text(ctx, `VSI ${p.verticalSpeed >= 0 ? '+' : ''}${p.verticalSpeed.toFixed(1)} m/s`, 16, 478, 12, COLORS.hudDim);
+    headingTape(ctx, headingDeg);
+
+    // Right side: fuel, damage, throttle.
+    const rx = VIEW_W - 196;
+    barGauge(ctx, rx, 66, 150, 'FUEL', p.fuel / 100, COLORS.hudGood, 0.25);
+    barGauge(ctx, rx, 100, 150, 'DAMAGE', p.damage / 100, COLORS.hudBad, 0.99);
+    barGauge(ctx, rx, 134, 150, 'THROTTLE', p.throttle, '#7fb2dd', -1);
+    if (p.fuel <= 25 && p.fuel > 0 && Math.floor(time * 2) % 2 === 0) {
+      text(ctx, 'LOW FUEL', rx, 168, 13, COLORS.hudWarn, 'left');
+    }
+    if (p.fuel <= 0) text(ctx, 'ENGINE OUT — GLIDE', rx, 168, 13, COLORS.hudBad, 'left');
+    if (game.stalled) text(ctx, 'STALL — NOSE DOWN, ADD POWER', VIEW_W / 2, 108, 14, COLORS.hudBad, 'center');
+
+    // Attitude ball, bottom centre-left.
+    attitudeBall(ctx, 150, VIEW_H - 92, 44, p.roll, p.pitch);
+    text(ctx, 'ATTITUDE', 150, VIEW_H - 32, 10, COLORS.hudDim, 'center');
   }
-  if (p.fuel <= 0) text(ctx, 'ENGINE OUT — GLIDE', rx, 168, 13, COLORS.hudBad, 'left');
-  if (game.stalled) text(ctx, 'STALL — NOSE DOWN, ADD POWER', VIEW_W / 2, 108, 14, COLORS.hudBad, 'center');
 
-  // Attitude ball, bottom centre-left.
-  attitudeBall(ctx, 150, VIEW_H - 92, 44, p.roll, p.pitch);
-  text(ctx, 'ATTITUDE', 150, VIEW_H - 32, 10, COLORS.hudDim, 'center');
 
-  // Mission banner: objective and ring progress.
+  // Mission banner: objective and ring progress. In cockpit view it rides
+  // above the dashboard instead of on top of it.
   const mission = game.mission;
   if (mission) {
-    panel(ctx, VIEW_W / 2 - 260, VIEW_H - 62, 520, 48, 0.5);
+    const bannerY = cockpit ? VIEW_H - 232 : VIEW_H - 62;
+    panel(ctx, VIEW_W / 2 - 260, bannerY, 520, 48, 0.5);
     const rings = game.ringIndex < game.rings.length
       ? `Ring ${game.ringIndex + 1} of ${game.rings.length} — then land at ${game.stripName}`
       : `All rings done — land at ${game.stripName}`;
-    text(ctx, rings, VIEW_W / 2, VIEW_H - 42, 14, COLORS.hud, 'center');
+    text(ctx, rings, VIEW_W / 2, bannerY + 20, 14, COLORS.hud, 'center');
     if (game.timeLimit > 0) {
-      text(ctx, `TIME ${formatTime(game.elapsed)} / ${formatTime(game.timeLimit)}`, VIEW_W / 2, VIEW_H - 20, 11, game.elapsed > game.timeLimit - 30 ? COLORS.hudWarn : COLORS.hudDim, 'center');
+      text(ctx, `TIME ${formatTime(game.elapsed)} / ${formatTime(game.timeLimit)}`, VIEW_W / 2, bannerY + 42, 11, game.elapsed > game.timeLimit - 30 ? COLORS.hudWarn : COLORS.hudDim, 'center');
     } else {
-      text(ctx, `TIME ${formatTime(game.elapsed)}`, VIEW_W / 2, VIEW_H - 20, 11, COLORS.hudDim, 'center');
+      text(ctx, `TIME ${formatTime(game.elapsed)}`, VIEW_W / 2, bannerY + 42, 11, COLORS.hudDim, 'center');
     }
   }
 
@@ -245,7 +393,7 @@ export function drawMenu(ctx, game, time) {
     if (card.best) text(ctx, `Best score ${card.best}`, x + 16, y + 130, 12, COLORS.hudGood);
   });
 
-  text(ctx, 'W/S throttle · Arrow keys pitch and bank · Mouse drag steers · Wheel throttle', VIEW_W / 2, 440, 15, COLORS.hud, 'center');
+  text(ctx, 'W/S throttle · Arrow keys pitch and bank · Mouse drag steers · Wheel throttle · C cockpit view', VIEW_W / 2, 440, 15, COLORS.hud, 'center');
   text(ctx, 'Land gently on a strip: slow, level wings, sink under 4 m/s. Water and hills are not runways.', VIEW_W / 2, 468, 14, COLORS.hudDim, 'center');
   text(ctx, 'Press Enter or click a mission to fly.', VIEW_W / 2, 520, 16, COLORS.hud, 'center');
 }
@@ -281,6 +429,7 @@ export function drawEnd(ctx, game) {
 
   const rows = [
     ['Rings flown', `${game.ringIndex} of ${game.rings.length}`],
+    ['Best combo', game.combo > 1 ? `x${game.combo}` : '—'],
     ['Time', formatTime(game.elapsed)],
     ['Fuel left', `${Math.round(game.plane.fuel)}%`],
     ['Damage', `${Math.round(game.plane.damage)}%`],

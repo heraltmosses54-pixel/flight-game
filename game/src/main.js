@@ -1,7 +1,7 @@
 // Boot and the main loop: wire input, audio, the game and the renderer
 // together, run requestAnimationFrame, and handle the menu keys and clicks.
 
-import { VIEW_W, VIEW_H } from './config.js';
+import { VIEW_W, VIEW_H, MISSIONS } from './config.js';
 import { makeGame } from './game.js';
 import { makeInput } from './input.js';
 import { makeAudio } from './audio.js';
@@ -18,6 +18,9 @@ const input = makeInput(canvas);
 const audio = makeAudio();
 const game = makeGame(canvas);
 game.audio = audio;
+// Headless test handle: the verification driver reads state and steers
+// through this (players never need it).
+window.__game = game;
 
 // Menu card hit areas, for clicks (computed in drawMenu's layout).
 function menuCardAt(mx, my) {
@@ -63,8 +66,13 @@ function frame(now) {
     game.say(audio.muted ? 'Sound off.' : 'Sound on.', '#eaf6ff');
   }
   if (input.wasPressed('KeyR') && game.state !== 'menu') {
-    if (game.mission) game.startMission(game.mission.id === 'first' ? 0 : game.mission.id === 'hop' ? 1 : 2);
+    // Index-based restart: a renamed or added mission cannot break it.
+    if (game.mission) game.startMission(MISSIONS.findIndex((m) => m.id === game.mission.id));
     else if (game.freeFlight) game.startFreeFlight();
+  }
+  if (input.wasPressed('KeyC') && (game.state === 'flying' || game.state === 'briefing' || game.state === 'paused')) {
+    game.view = game.view === 'cockpit' ? 'chase' : 'cockpit';
+    game.say(game.view === 'cockpit' ? 'Cockpit view — gauges live.' : 'Chase view.', '#eaf6ff');
   }
   if (input.wasPressed('KeyP')) {
     if (game.state === 'flying') game.state = 'paused';
@@ -102,7 +110,7 @@ function frame(now) {
     drawCard(ctx, game.mission.name, [game.mission.brief, '', 'Press Enter or push the stick to take off.']);
   }
   if (game.state === 'paused') {
-    drawCard(ctx, 'PAUSED', ['P or Esc to keep flying.', 'R restarts the mission.', 'M toggles the sound.']);
+    drawCard(ctx, 'PAUSED', ['P or Esc to keep flying.', 'R restarts the mission.', 'C switches cockpit / chase view.', 'M toggles the sound.']);
   }
   if (game.state === 'landed' || game.state === 'crashed') drawEnd(ctx, game);
 

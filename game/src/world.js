@@ -131,7 +131,7 @@ export function buildWorld(seed = 7) {
     ridgeNear.push(0.35 + Math.abs(fractal(i * 55, 9500)) * 0.8);
   }
 
-  return { seed, groundHeight, groundKind, objects, clouds, ridgeFar, ridgeNear };
+  return { seed, groundHeight, groundKind, objects, clouds, ridgeFar, ridgeNear, islands: ISLANDS };
 }
 
 // A strip's runway rectangle, for landing checks and drawing.
