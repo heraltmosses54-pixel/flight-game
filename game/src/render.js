@@ -43,6 +43,7 @@ const TERRAIN_COLOR = {
   sea: COLORS.seaNear,
   river: COLORS.river,
   jungle: COLORS.jungle,
+  rock: COLORS.rock,
   sand: COLORS.sand,
   grass: COLORS.grass[0],
   fieldA: COLORS.field[0],
@@ -639,6 +640,55 @@ function drawCrate(ctx, basis, crate, time) {
   }
   ctx.restore();
 }
+// The volcano's smoke plume: a rising column of grey puffs over the
+// crater, drifting downwind and thinning as it climbs — the landmark's
+// signature, visible from anywhere on the chart.
+function drawSmoke(ctx, basis, volcano, time, wind, storm) {
+  for (let i = 0; i < 7; i++) {
+    const h = volcano.rimY + 28 + i * 42 + Math.sin(time * 0.5 + i * 1.3) * 6;
+    const x = volcano.x + i * (6 + wind * 3) + Math.sin(time * 0.3 + i * 2.1) * 12;
+    const z = volcano.z - i * 4;
+    const p = project(basis, [x, h, z]);
+    if (!p) continue;
+    const s = ((16 + i * 13) * FOCAL) / p.d;
+    if (s < 2) continue;
+    const alpha = clamp(0.55 - i * 0.06, 0.1, 0.55);
+    ctx.fillStyle = storm ? `rgba(58, 64, 78, ${alpha})` : `rgba(120, 116, 108, ${alpha})`;
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y, s, s * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Lightning: a jagged bolt from the storm cloud base, drawn from a fixed
+// seed so a staged screenshot shows the same bolt every time.
+function drawLightning(ctx, seed, flash) {
+  const bx = VIEW_W * (0.3 + 0.13 * seed);
+  const by = -10;
+  const zig = (i) => Math.sin(i * 12.9898 + seed * 78.233) * 26;
+  ctx.save();
+  ctx.globalAlpha = clamp(flash * 1.6, 0, 1);
+  ctx.strokeStyle = '#fff8d6';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  let x = bx;
+  let y = by;
+  ctx.moveTo(x, y);
+  for (let i = 1; i <= 9; i++) {
+    x += zig(i);
+    y += 46;
+    ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255, 248, 214, 0.35)';
+  ctx.lineWidth = 9;
+  ctx.stroke();
+  ctx.restore();
+  // The flash lights the whole sky for a frame.
+  ctx.fillStyle = `rgba(230, 238, 255, ${clamp(flash * 0.28, 0, 0.28)})`;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+}
+
 function drawCloud(ctx, basis, c, storm) {
   const p = project(basis, [c.x, c.y, c.z]);
   if (!p) return;
@@ -922,6 +972,7 @@ export function drawScene(ctx, game, world, time) {
   // Billboards far to near: clouds, objects, rings.
   const drawables = [];
   for (const c of world.clouds) drawables.push({ d: c.z - plane.z, fn: () => drawCloud(ctx, basis, c, storm) });
+  if (world.volcano) drawables.push({ d: world.volcano.z - plane.z, fn: () => drawSmoke(ctx, basis, world.volcano, time, game.wind, storm) });
   for (const o of world.objects) drawables.push({ d: o.z - plane.z, fn: () => drawObject(ctx, basis, o, time, game.wind) });
   game.rings.forEach((ring, i) => {
     const state = i < game.ringIndex ? 'done' : i === game.ringIndex ? 'next' : 'later';
@@ -964,6 +1015,7 @@ export function drawScene(ctx, game, world, time) {
   // Chase view shows the plane; cockpit view shows the dashboard instead.
   if (!cockpit) drawPlane(ctx, plane, time, gy);
   if (storm) drawRain(ctx, time);
+  if (storm && game.flash > 0) drawLightning(ctx, game.boltSeed, game.flash);
   if (cockpit) drawCockpit(ctx, game, time);
   ctx.restore();
 }

@@ -48,6 +48,14 @@ export function makeParticles() {
       });
       parts.trim();
     },
+    // A wingtip vortex wisp: white, curling off the wing in a hard bank.
+    vortex(x, y, z) {
+      parts.list.push({
+        x, y, z, vx: 0, vy: 0.2, vz: -6,
+        life: 0.7, maxLife: 0.7, size: 2, color: '#eaf6ff',
+      });
+      parts.trim();
+    },
     trim() {
       if (parts.list.length > 160) parts.list.splice(0, parts.list.length - 160);
     },

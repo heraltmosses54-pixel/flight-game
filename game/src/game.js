@@ -118,6 +118,12 @@ export function makeGame(canvas) {
     stalled: false,
     prevZ: 0,
     freeFlight: false,
+    braking: false, // Space held this frame: the HUD shows BRAKE
+    flash: 0, // lightning flash, 0..1: the storm lights up, then fades
+    boltSeed: 0, // which jagged bolt the flash draws
+    lightningTimer: 4, // seconds to the next strike in a storm
+    shake: 0, // screen shake, 0..1: hard landings and crashes rattle the view
+    vortexTimer: 0,
   };
 
   game.say = (text, color) => {
@@ -291,6 +297,8 @@ export function makeGame(canvas) {
   // One frame of game logic. `ctl` is the polled input, `dt` seconds.
   game.update = (ctl, dt) => {
     game.time += dt;
+    // The brake light follows the key, whatever the state.
+    game.braking = game.state === 'flying' && !!ctl.brake;
     // A staged screenshot freezes the plane in place; the prop still spins.
     if (game.shotFreeze) return;
     if (game.state === 'briefing') {
@@ -307,10 +315,25 @@ export function makeGame(canvas) {
     // The climb upgrade scales the pitch command: +10% per level.
     const event = stepPlane(game.plane, { ...ctl, pitch: ctl.pitch * (1 + 0.1 * game.upgradeLevels.climb) }, game.world, game.strips, dt, game.wind * 0.4, gust);
     const p = game.plane;
-    game.stalled = p.speed < 33 && p.airborne;
+    // Flaps down lower the stall speed, so the stall warning follows them.
+    game.stalled = p.speed < (p.flaps ? 28 : 33) && p.airborne;
+
+    // Storm lightning: a strike every few seconds, the flash fading fast.
+    if (game.mission && game.mission.id === 'storm') {
+      game.lightningTimer -= dt;
+      if (game.lightningTimer <= 0) {
+        game.flash = 0.55;
+        game.boltSeed = (game.boltSeed + 1) % 5;
+        game.lightningTimer = 3.5 + Math.random() * 4;
+      }
+    }
+    if (game.flash > 0) game.flash = Math.max(0, game.flash - dt * 1.4);
+    // Screen shake decays after the knock that caused it.
+    if (game.shake > 0) game.shake = Math.max(0, game.shake - dt * 1.4);
 
     if (event === 'airborne') game.say('Airborne — gear up, flaps up, enjoy the islands.', '#58d68d');
     if (event === 'hard') {
+      game.shake = 1;
       // The hull upgrade soaks part of the knock: 25% of the 28-point
       // hard-landing damage per level.
       const soaked = DAMAGE.hardLanding * 0.25 * game.upgradeLevels.hull;
@@ -424,6 +447,18 @@ export function makeGame(canvas) {
         game.particles.trail(p.x - Math.sin(p.heading) * 8, p.y - 0.5, p.z - Math.cos(p.heading) * 8);
       }
     }
+    // Wingtip vortices: in a hard bank the wings shed white wisps, so a
+    // steep turn reads on screen as well as on the attitude ball.
+    if (p.airborne && Math.abs(p.roll) > 0.55 && p.speed > 45) {
+      game.vortexTimer -= dt;
+      if (game.vortexTimer <= 0) {
+        game.vortexTimer = 0.12;
+        const rx = Math.cos(p.heading);
+        const rz = -Math.sin(p.heading);
+        game.particles.vortex(p.x + rx * 11, p.y - 0.5, p.z + rz * 11);
+        game.particles.vortex(p.x - rx * 11, p.y - 0.5, p.z - rz * 11);
+      }
+    }
     game.particles.update(dt);
 
     // Time limit (Storm Run): out of time ends the flight as a crash of sorts.
@@ -448,6 +483,7 @@ export function makeGame(canvas) {
       return;
     }
     if (p.crashed) {
+      game.shake = 1;
       game.particles.dust(p.x, p.y, p.z, true);
       game.finishFlight(false);
       game.audio?.chime(false);

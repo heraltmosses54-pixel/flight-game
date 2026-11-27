@@ -30,6 +30,20 @@ const FLATS = [
   { x: 0, z: 10450, hw: 90, hl: 700 },
 ];
 
+// The volcano, Gunung Api: a steep cone west of Far Strip, its crater
+// rim at ~270 m with a bowl down to 240 m. The survey rings circle the
+// rim at ~300 m, so the route to them flies high over the flanks.
+const VOLCANO = { x: -1600, z: 9800, r: 520, h: 330, craterR: 95, craterFloor: 240 };
+function volcanoHeight(x, z) {
+  const d = Math.hypot(x - VOLCANO.x, z - VOLCANO.z);
+  if (d >= VOLCANO.r) return 0;
+  if (d < VOLCANO.craterR) {
+    const rim = VOLCANO.h * (1 - VOLCANO.craterR / VOLCANO.r);
+    return rim - (VOLCANO.craterR - d) * ((rim - VOLCANO.craterFloor) / VOLCANO.craterR);
+  }
+  return VOLCANO.h * (1 - d / VOLCANO.r);
+}
+
 // The Papua river: a winding channel down the main north-south corridor
 // (z 400..10600). Two-sine meander, component amplitudes 130 + 70 = 200m,
 // realised range about -160..+157m. The river bends around the airfields:
@@ -106,6 +120,10 @@ export function buildWorld(seed = 7) {
     const s = seaNoise(x * 0.5, z * 0.5);
     const sea = clamp((s - 0.15) / 0.45, 0, 1);
     h -= sea * 30;
+    // Gunung Api rises over whatever the noise says: the cone is the
+    // landmark, so it wins over the rolling land and the sea channels.
+    const vd = Math.hypot(x - VOLCANO.x, z - VOLCANO.z);
+    h = Math.max(h, volcanoHeight(x, z));
     // Land is guaranteed near every airfield.
     for (const f of FLATS) {
       if (Math.abs(x - f.x) < f.hw + 160 && Math.abs(z - f.z) < f.hl + 160) h = Math.max(h, 6);
@@ -133,8 +151,10 @@ export function buildWorld(seed = 7) {
     // Clearance carve (hard safety rule): the gorge walls and the island
     // bumps must never block a mission route — cap terrain at 44m within
     // 130m of any route polyline, blending back to full height by 450m.
+    // The volcano is exempt: its survey route flies high over the flanks,
+    // and carving it would flatten the landmark itself.
     const rd = distToRoutes(x, z);
-    if (rd < 450) {
+    if (rd < 450 && vd > VOLCANO.r + 150) {
       h = Math.min(h, 44 + (200 - 44) * sstep((rd - 130) / 320));
     }
     // Flat pads under the supply drop zones, so crates land on level
@@ -169,6 +189,10 @@ export function buildWorld(seed = 7) {
     if (h < 1.5) return 'sea';
     const shore = 2.6;
     if (h < shore) return 'sand';
+    // Gunung Api's flanks read as bare lava rock, not grass or jungle:
+    // the slope shader darkens them further, so the cone stands out
+    // from the green islands at a glance.
+    if (Math.hypot(x - VOLCANO.x, z - VOLCANO.z) < VOLCANO.r && h > 60) return 'rock';
     const n = fieldNoise(x, z);
     // Jungle: dense dark-green forest patches, thicker along the river.
     if (jungleNoise(x, z) + (ad < 150 ? 0.25 : 0) > 0.42) return 'jungle';
@@ -261,7 +285,7 @@ export function buildWorld(seed = 7) {
     deckY1: groundHeight(bridgeX + 45, 2600) + 2.5,
   };
 
-  return { seed, groundHeight, groundKind, objects, clouds, ridgeFar, ridgeNear, islands: ISLANDS, bridge };
+  return { seed, groundHeight, groundKind, objects, clouds, ridgeFar, ridgeNear, islands: ISLANDS, bridge, volcano: { x: VOLCANO.x, z: VOLCANO.z, rimY: VOLCANO.h * (1 - VOLCANO.craterR / VOLCANO.r) } };
 }
 
 // A strip's runway rectangle, for landing checks and drawing.

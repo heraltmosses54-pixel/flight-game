@@ -20,6 +20,10 @@ export const FLIGHT = {
   throttleRate: 0.55, // per second
   gravity: 9.8,
   groundEffect: 6, // metres above the ground where the flare softens
+  stallFlaps: 28, // stall speed with the flaps down (F key)
+  flapsDrag: 5, // m/s the flaps cost off the top speed
+  brakeDrag: 12, // m/s an airbrake (Space) costs off the top speed
+  brakeGround: 30, // m/s^2 the wheel brakes (Space) shed on the ground
 };
 
 // Fuel: percent, drains faster the harder the throttle is worked.
@@ -84,7 +88,7 @@ export const COLORS = {
   seaNear: '#2f6b8f',
   river: '#2fa896', // clear blue-green river water, distinct from the sea
   jungle: '#2f6b2a', // dense dark-green forest
-  rock: '#8d7d6b', // grey-brown cliff faces on steep slopes
+  rock: '#6b5d4f', // dark grey-brown lava rock and cliff faces
   stormSlate: '#3d4757', // dark slate the storm mixes the ground toward
   stormHaze: '#4a5568', // dark haze mix for storm ground slices
   haze: 'rgba(246, 207, 143, 0.35)',
@@ -179,6 +183,22 @@ export const MISSIONS = [
     wind: 1,
     timeLimit: 0,
     par: 5500,
+  },
+  {
+    id: 'volcano',
+    name: 'Volcano Survey',
+    brief: 'Circle the crater of Gunung Api — four rings around the rim, high over the lava rock — then land at Far Strip.',
+    start: { x: 0, y: 220, z: 8800, heading: -0.8, speed: 60, throttle: 0.7, fuel: 70 },
+    rings: [
+      { x: -1331, y: 300, z: 10069, r: 26 },
+      { x: -1331, y: 295, z: 9531, r: 26 },
+      { x: -1869, y: 300, z: 9531, r: 26 },
+      { x: -1869, y: 295, z: 10069, r: 26 },
+    ],
+    strip: { z: 10000, x: 0 },
+    wind: 2,
+    timeLimit: 0,
+    par: 6000,
   },
 ];
 

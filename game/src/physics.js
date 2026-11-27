@@ -18,6 +18,7 @@ export function makePlane(start) {
     fuel: start.fuel,
     damage: 0,
     verticalSpeed: 0,
+    flaps: false, // flaps down (F key): slower stall, more drag
     onGround: start.speed === 0,
     airborne: false,
     landed: false,
@@ -29,9 +30,10 @@ export function makePlane(start) {
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 
-// One physics step. `ctl` is { pitch: -1..1, roll: -1..1, throttle: -1..1 }
-// (pitch +1 climbs, roll +1 banks right). `wind` is the crosswind in m/s and
-// `gust` its momentary extra push. Returns an event string or ''.
+// One physics step. `ctl` is { pitch: -1..1, roll: -1..1, throttle: -1..1,
+// brake: 0..1 } (pitch +1 climbs, roll +1 banks right). `wind` is the
+// crosswind in m/s and `gust` its momentary extra push. Returns an event
+// string or ''.
 export function stepPlane(plane, ctl, world, strips, dt, wind, gust) {
   if (plane.crashed || plane.landed) return '';
 
@@ -43,7 +45,11 @@ export function stepPlane(plane, ctl, world, strips, dt, wind, gust) {
   plane.fuel = Math.max(0, plane.fuel - (FUEL.drainIdle + plane.throttle * FUEL.drainFull) * dt);
 
   // Speed chases the throttle setting; drag keeps the top end honest.
-  const target = FLIGHT.minSpeed + plane.throttle * (FLIGHT.maxSpeed - FLIGHT.minSpeed);
+  // Flaps cost top speed; the brake (Space) costs more in the air.
+  let target = FLIGHT.minSpeed + plane.throttle * (FLIGHT.maxSpeed - FLIGHT.minSpeed);
+  if (plane.flaps) target -= FLIGHT.flapsDrag;
+  if (ctl.brake && !plane.onGround) target -= FLIGHT.brakeDrag;
+  target = Math.max(18, target);
   plane.speed = lerp(plane.speed, target, 1 - Math.exp(-0.55 * dt));
   if (plane.fuel <= 0) plane.speed = lerp(plane.speed, 26, 1 - Math.exp(-0.3 * dt));
 
@@ -55,13 +61,15 @@ export function stepPlane(plane, ctl, world, strips, dt, wind, gust) {
 
   // A banked wing turns the plane; a stalled wing barely answers.
   // Banking right (positive roll) turns the nose right: heading grows.
-  const stalled = plane.speed < FLIGHT.stallSpeed && plane.y > world.groundHeight(plane.x, plane.z) + 2;
+  // Flaps down lower the stall speed, so the wing keeps flying slower.
+  const stallSpeed = plane.flaps ? FLIGHT.stallFlaps : FLIGHT.stallSpeed;
+  const stalled = plane.speed < stallSpeed && plane.y > world.groundHeight(plane.x, plane.z) + 2;
   const authority = stalled ? 0.35 : 1;
   plane.heading += Math.tan(plane.roll) * (FLIGHT.gravity / Math.max(plane.speed, 18)) * authority * dt;
 
   // Climb and sink: pitch sets the vertical speed, stall adds a drop.
   let vs = plane.speed * Math.sin(plane.pitch) * authority;
-  if (stalled) vs -= (FLIGHT.stallSpeed - plane.speed) * 0.55;
+  if (stalled) vs -= (stallSpeed - plane.speed) * 0.55;
   // Ground effect softens the last metres of a landing.
   const ground = world.groundHeight(plane.x, plane.z);
   if (plane.y - ground < FLIGHT.groundEffect && vs < 0) vs *= 0.55;
@@ -74,16 +82,19 @@ export function stepPlane(plane, ctl, world, strips, dt, wind, gust) {
   plane.z += Math.cos(plane.heading) * forward * dt;
 
   // Rolling on the ground: drag slows the plane, steering is gentle.
+  // The wheel brakes (Space) shed speed much faster, for a short-field stop.
   if (plane.y <= ground + 0.4 && plane.speed < 12 && !plane.airborne) {
     plane.y = ground;
-    plane.speed = Math.max(0, plane.speed - 6 * dt);
+    plane.speed = Math.max(0, plane.speed - (ctl.brake ? FLIGHT.brakeGround : 6) * dt);
     plane.onGround = true;
   } else {
     plane.onGround = false;
   }
 
   // Leaving the ground: once fast enough with the nose up, we fly.
-  if (!plane.airborne && plane.speed > 34 && plane.pitch > 0.04 && plane.y > ground + 1) {
+  // Flaps down let her rotate slower, like a real bush plane.
+  const rotateSpeed = plane.flaps ? 30 : 34;
+  if (!plane.airborne && plane.speed > rotateSpeed && plane.pitch > 0.04 && plane.y > ground + 1) {
     plane.airborne = true;
     return 'airborne';
   }

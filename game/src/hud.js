@@ -176,6 +176,20 @@ function drawMinimap(ctx, game) {
     ctx.ellipse(mx(isl.x), mz(isl.z), (isl.r / 4800) * w, (isl.r / 12400) * h, 0, 0, Math.PI * 2);
     ctx.fill();
   }
+  // Gunung Api: a red triangle on the chart, labelled, so the landmark
+  // reads on the map before the pilot ever sees the cone.
+  if (game.world.volcano) {
+    const vx = mx(game.world.volcano.x);
+    const vz = mz(game.world.volcano.z);
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath();
+    ctx.moveTo(vx, vz - 7);
+    ctx.lineTo(vx - 6, vz + 5);
+    ctx.lineTo(vx + 6, vz + 5);
+    ctx.closePath();
+    ctx.fill();
+    text(ctx, 'G. API', vx, vz - 12, 8, COLORS.hud, 'center');
+  }
   for (const strip of game.strips) {
     ctx.fillStyle = '#e8e8e8';
     ctx.fillRect(mx(strip.x) - 2, mz(strip.z - 450), 4, (900 / 12400) * h);
@@ -289,7 +303,7 @@ function drawApproach(ctx, game) {
   ctx.closePath();
   ctx.fill();
   text(ctx, 'GLIDE', lx, y + 86, 8, COLORS.hudDim, 'center');
-  if (final) text(ctx, `FULL FLAP · ${Math.round(p.speed * 1.944)} KT`, x + 12, y + 68, 12, COLORS.hud, 'left');
+  if (final) text(ctx, `${p.flaps ? 'FLAPS DOWN' : 'FLAPS UP — F FOR FLAPS'} · ${Math.round(p.speed * 1.944)} KT`, x + 12, y + 68, 12, COLORS.hud, 'left');
   else text(ctx, `SINK ${p.verticalSpeed.toFixed(1)} m/s · ${Math.round(p.speed * 1.944)} KT`, x + 12, y + 68, 11, COLORS.hudDim, 'left');
 }
 
@@ -327,6 +341,26 @@ export function drawHud(ctx, game, time) {
     // Attitude ball, bottom centre-left.
     attitudeBall(ctx, 150, VIEW_H - 92, 44, p.roll, p.pitch);
     text(ctx, 'ATTITUDE', 150, VIEW_H - 32, 10, COLORS.hudDim, 'center');
+
+    // Flaps and brake state, under the throttle bar: the systems the
+    // pilot can see at a glance without looking at the panel.
+    const sysY = 156;
+    if (p.flaps) text(ctx, 'FLAPS DOWN', rx, sysY, 12, COLORS.hudWarn, 'left');
+    if (game.braking) text(ctx, 'BRAKE', rx + 96, sysY, 12, COLORS.hudBad, 'left');
+  }
+
+  // Countdown chip for timed missions: the time left, big, turning red
+  // under 30 seconds — the tension the clock is supposed to carry.
+  // Top right, under the fuel/throttle bars, clear of the centred
+  // warnings and the minimap below.
+  if (game.timeLimit > 0) {
+    const left = Math.max(0, game.timeLimit - game.elapsed);
+    const urgent = left <= 30;
+    const chip = `TIME LEFT ${formatTime(left)}`;
+    ctx.font = `bold ${urgent ? 18 : 15}px sans-serif`;
+    const w = ctx.measureText(chip).width + 28;
+    panel(ctx, VIEW_W - 16 - w, 184, w, 32, urgent ? 0.75 : 0.55);
+    text(ctx, chip, VIEW_W - 16 - w / 2, 200, urgent ? 18 : 15, urgent ? COLORS.hudBad : COLORS.hud, 'center');
   }
 
 
@@ -383,8 +417,8 @@ export function drawHud(ctx, game, time) {
     text(ctx, 'LOW AND SLOW — WATCH THE GROUND', VIEW_W / 2, 132, 13, COLORS.hudWarn, 'center');
   }
   text(ctx, game.zones.length > 0
-    ? 'M mute · P pause · R restart · B drop crate'
-    : 'M mute · P pause · R restart', VIEW_W - 16, VIEW_H - 14, 11, COLORS.hudDim, 'right');
+    ? 'M mute · P pause · R restart · B drop crate · F flaps · Space brake'
+    : 'M mute · P pause · R restart · F flaps · Space brake', VIEW_W - 16, VIEW_H - 14, 11, COLORS.hudDim, 'right');
 }
 
 export function formatTime(t) {
@@ -399,27 +433,28 @@ export function drawMenu(ctx, game, time) {
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   text(ctx, 'SKY POST', VIEW_W / 2, 108, 84, COLORS.hud, 'center');
   text(ctx, 'ISLAND AIR MAIL — fly the mail, mind the fuel', VIEW_W / 2, 158, 20, COLORS.ringNext, 'center');
-  text(ctx, 'Pick a mission — keys 1, 2, 3, 4, or 5 for a free flight. Click a card or press its key.', VIEW_W / 2, 200, 15, COLORS.hudDim, 'center');
+  text(ctx, 'Pick a mission — keys 1, 2, 3, 4, 5, or 6 for a free flight. Click a card or press its key.', VIEW_W / 2, 200, 15, COLORS.hudDim, 'center');
 
   const cards = [
     { key: '1', name: 'First Delivery', desc: 'Take off, fly 3 rings, land at Coral Strip.', best: game.best.first },
     { key: '2', name: 'Island Hop', desc: 'Three drops across the chain on a tight tank.', best: game.best.hop },
     { key: '3', name: 'Storm Run', desc: 'Six rings in gusting wind. Fast and clean wins.', best: game.best.storm },
     { key: '4', name: 'Supply Run', desc: 'Drop a crate on each island ring. Press B over the zone — bullseye pays 500.', best: game.best.supply },
-    { key: '5', name: 'Free Flight', desc: 'No rings, no timer. Just you and the islands.', best: null },
+    { key: '5', name: 'Volcano Survey', desc: 'Circle the crater of Gunung Api — four rings around the rim, then land at Far Strip.', best: game.best.volcano },
+    { key: '6', name: 'Free Flight', desc: 'No rings, no timer. Just you and the islands.', best: null },
   ];
-  const cw = 224;
-  const gap = 12;
-  const x0 = VIEW_W / 2 - ((cw * 5 + gap * 4) / 2);
+  const cw = 196;
+  const gap = 10;
+  const x0 = VIEW_W / 2 - ((cw * 6 + gap * 5) / 2);
   cards.forEach((card, i) => {
     const x = x0 + i * (cw + gap);
     const y = 240;
     const hover = game.menuHover === i;
-    panel(ctx, x, y, cw, 150, hover ? 0.75 : 0.55);
+    panel(ctx, x, y, cw, 160, hover ? 0.75 : 0.55);
     ctx.strokeStyle = hover ? COLORS.ringNext : 'rgba(234, 246, 255, 0.25)';
     ctx.lineWidth = hover ? 3 : 1;
     ctx.beginPath();
-    ctx.roundRect(x, y, cw, 150, 8);
+    ctx.roundRect(x, y, cw, 160, 8);
     ctx.stroke();
     text(ctx, `[${card.key}]`, x + 16, y + 26, 13, COLORS.ringNext);
     text(ctx, card.name, x + 16, y + 56, 19, COLORS.hud);
@@ -428,15 +463,15 @@ export function drawMenu(ctx, game, time) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     wrapText(ctx, card.desc, x + 16, y + 86, cw - 32, 18);
-    if (card.best) text(ctx, `Best score ${card.best}`, x + 16, y + 130, 12, COLORS.hudGood);
+    if (card.best) text(ctx, `Best score ${card.best}`, x + 16, y + 140, 12, COLORS.hudGood);
   });
 
-  // Career upgrades (keys 6, 7, 8) and the career line, below the cards.
+  // Career upgrades (keys 7, 8, 9) and the career line, below the cards.
   const career = game.career || { gold: 0, flights: 0, landings: 0, bestRank: {}, upgrades: { tank: 0, climb: 0, hull: 0 } };
   const ups = [
-    { id: 'tank', key: '6' },
-    { id: 'climb', key: '7' },
-    { id: 'hull', key: '8' },
+    { id: 'tank', key: '7' },
+    { id: 'climb', key: '8' },
+    { id: 'hull', key: '9' },
   ];
   const uw = 360;
   const ux0 = VIEW_W / 2 - ((uw * 3 + gap * 2) / 2);
@@ -444,7 +479,7 @@ export function drawMenu(ctx, game, time) {
     const up = UPGRADES[u.id];
     const level = career.upgrades[u.id] || 0;
     const x = ux0 + i * (uw + gap);
-    const y = 402;
+    const y = 412;
     panel(ctx, x, y, uw, 52, 0.55);
     ctx.strokeStyle = 'rgba(234, 246, 255, 0.25)';
     ctx.lineWidth = 1;
@@ -458,14 +493,14 @@ export function drawMenu(ctx, game, time) {
     text(ctx, up.desc, x + uw - 14, y + 36, 11, COLORS.hudDim, 'right');
   });
   const ranks = MISSIONS.map((m) => `${m.name.split(' ')[0]} ${career.bestRank[m.id] || '—'}`).join(' · ');
-  text(ctx, `GOLD ${career.gold} · FLIGHTS ${career.flights} · LANDINGS ${career.landings} · BEST RANKS ${ranks}`, VIEW_W / 2, 472, 14, COLORS.ringNext, 'center');
+  text(ctx, `GOLD ${career.gold} · FLIGHTS ${career.flights} · LANDINGS ${career.landings} · BEST RANKS ${ranks}`, VIEW_W / 2, 482, 14, COLORS.ringNext, 'center');
 
-  text(ctx, 'W/S throttle · Arrow keys pitch and bank · Mouse drag steers · Wheel throttle · C cockpit view · B drop a supply crate', VIEW_W / 2, 500, 15, COLORS.hud, 'center');
-  text(ctx, 'Land gently on a strip: slow, level wings, sink under 4 m/s. Water and hills are not runways.', VIEW_W / 2, 526, 14, COLORS.hudDim, 'center');
-  text(ctx, 'Press Enter or click a mission to fly.', VIEW_W / 2, 566, 16, COLORS.hud, 'center');
+  text(ctx, 'W/S throttle · Arrow keys pitch and bank · Mouse drag steers · Wheel throttle · C cockpit view · B drop a supply crate', VIEW_W / 2, 510, 15, COLORS.hud, 'center');
+  text(ctx, 'F flaps down for a slow landing · Space brakes, on the ground or in the air · Land gently on a strip: slow, level wings, sink under 4 m/s.', VIEW_W / 2, 536, 14, COLORS.hudDim, 'center');
+  text(ctx, 'Press Enter or click a mission to fly.', VIEW_W / 2, 576, 16, COLORS.hud, 'center');
   // The latest message (e.g. an upgrade purchase) shows under the menu.
   const lastMsg = game.messages[game.messages.length - 1];
-  if (lastMsg) text(ctx, lastMsg.text, VIEW_W / 2, 600, 15, lastMsg.color || COLORS.hud, 'center');
+  if (lastMsg) text(ctx, lastMsg.text, VIEW_W / 2, 606, 15, lastMsg.color || COLORS.hud, 'center');
 }
 
 function wrapText(ctx, s, x, y, maxW, lh) {

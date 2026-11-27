@@ -356,6 +356,18 @@ export function drawCockpit(ctx, game, time) {
   ctx.stroke();
   text(ctx, 'SKY POST · SP-07', VIEW_W / 2, panelY + 18, 11, 'rgba(234, 246, 255, 0.5)');
 
+  // Flaps and brake lamps: amber when the flaps are down, red while the
+  // brake is held — the pilot's own systems, on the panel.
+  const lamp = (x, label, on, color) => {
+    ctx.fillStyle = on ? color : 'rgba(234, 246, 255, 0.15)';
+    ctx.beginPath();
+    ctx.arc(x, panelY + 18, 5, 0, Math.PI * 2);
+    ctx.fill();
+    text(ctx, label, x + 12, panelY + 18, 10, on ? color : COLORS.hudDim, 'left');
+  };
+  lamp(60, 'FLAPS', p.flaps, '#ffb52e');
+  lamp(VIEW_W - 130, 'BRAKE', game.braking, '#ff5d4d');
+
   // Six lit gauges across the panel.
   const gy = panelY + 82;
   const r = 48;

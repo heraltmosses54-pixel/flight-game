@@ -24,12 +24,12 @@ window.__game = game;
 
 // Menu card hit areas, for clicks (computed in drawMenu's layout).
 function menuCardAt(mx, my) {
-  const cw = 224;
-  const gap = 12;
-  const x0 = VIEW_W / 2 - ((cw * 5 + gap * 4) / 2);
-  for (let i = 0; i < 5; i++) {
+  const cw = 196;
+  const gap = 10;
+  const x0 = VIEW_W / 2 - ((cw * 6 + gap * 5) / 2);
+  for (let i = 0; i < 6; i++) {
     const x = x0 + i * (cw + gap);
-    if (mx >= x && mx <= x + cw && my >= 240 && my <= 390) return i;
+    if (mx >= x && mx <= x + cw && my >= 240 && my <= 400) return i;
   }
   return -1;
 }
@@ -39,7 +39,7 @@ canvas.addEventListener('click', () => {
   if (game.state === 'menu') {
     const i = menuCardAt(input.mouseX, input.mouseY);
     if (i >= 0) {
-      if (i === 4) game.startFreeFlight();
+      if (i === 5) game.startFreeFlight();
       else game.startMission(i);
     }
   }
@@ -75,6 +75,10 @@ function frame(now) {
     game.say(game.view === 'cockpit' ? 'Cockpit view — gauges live.' : 'Chase view.', '#eaf6ff');
   }
   if (input.wasPressed('KeyB') && game.state === 'flying') game.dropCrate();
+  if (input.wasPressed('KeyF') && (game.state === 'flying' || game.state === 'briefing' || game.state === 'paused')) {
+    game.plane.flaps = !game.plane.flaps;
+    game.say(game.plane.flaps ? 'Flaps down — slower stall, more drag.' : 'Flaps up.', '#eaf6ff');
+  }
   if (input.wasPressed('KeyP')) {
     if (game.state === 'flying') game.state = 'paused';
     else if (game.state === 'paused') game.state = 'flying';
@@ -86,7 +90,8 @@ function frame(now) {
     if (input.wasPressed('Digit2')) game.startMission(1);
     if (input.wasPressed('Digit3')) game.startMission(2);
     if (input.wasPressed('Digit4')) game.startMission(3);
-    if (input.wasPressed('Digit5')) game.startFreeFlight();
+    if (input.wasPressed('Digit5')) game.startMission(4);
+    if (input.wasPressed('Digit6')) game.startFreeFlight();
     // Buy the next level of an upgrade with gold (keys 6, 7, 8).
     const buyUpgrade = (id) => {
       const up = UPGRADES[id];
@@ -109,9 +114,9 @@ function frame(now) {
         : `${25 * c.upgrades[id]}% less damage`;
       game.say(`${up.name} upgraded — ${detail}.`, '#58d68d');
     };
-    if (input.wasPressed('Digit6')) buyUpgrade('tank');
-    if (input.wasPressed('Digit7')) buyUpgrade('climb');
-    if (input.wasPressed('Digit8')) buyUpgrade('hull');
+    if (input.wasPressed('Digit7')) buyUpgrade('tank');
+    if (input.wasPressed('Digit8')) buyUpgrade('climb');
+    if (input.wasPressed('Digit9')) buyUpgrade('hull');
     if (input.wasPressed('Enter')) game.startMission(0);
     game.menuHover = menuCardAt(input.mouseX, input.mouseY);
   }
@@ -129,7 +134,13 @@ function frame(now) {
   audio.update(game.plane.throttle, game.plane.speed, game.plane.airborne);
 
   // Draw: the world, then the HUD, then the screen for the state.
+  // A hard landing or a crash rattles the whole view for a moment.
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+  ctx.save();
+  if (game.shake > 0) {
+    const s = game.shake * 9;
+    ctx.translate((Math.random() * 2 - 1) * s, (Math.random() * 2 - 1) * s);
+  }
   drawScene(ctx, game, game.world, game.time);
   if (game.state === 'flying' || game.state === 'paused' || game.state === 'briefing') drawHud(ctx, game, game.time);
   if (game.state === 'menu') drawMenu(ctx, game, game.time);
@@ -137,9 +148,10 @@ function frame(now) {
     drawCard(ctx, game.mission.name, [game.mission.brief, '', 'Press Enter or push the stick to take off.']);
   }
   if (game.state === 'paused') {
-    drawCard(ctx, 'PAUSED', ['P or Esc to keep flying.', 'R restarts the mission.', 'C switches cockpit / chase view.', 'M toggles the sound.', 'B drops a supply crate (Supply Run).']);
+    drawCard(ctx, 'PAUSED', ['P or Esc to keep flying.', 'R restarts the mission.', 'C switches cockpit / chase view.', 'M toggles the sound.', 'F flaps · Space brakes.', 'B drops a supply crate (Supply Run).']);
   }
   if (game.state === 'landed' || game.state === 'crashed') drawEnd(ctx, game);
+  ctx.restore();
 
   input.clearPressed();
   requestAnimationFrame(frame);

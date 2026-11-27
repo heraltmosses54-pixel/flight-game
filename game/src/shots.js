@@ -42,16 +42,16 @@ export function stageShot(game, shot, seed) {
     game.elapsed = 42;
     game.say('First Delivery — ring 1 of 3 ahead', '#eaf6ff');
   } else if (shot === '2-rings') {
-    // Right on the second ring: staged slightly east of the ring so the
-    // river (x~99 at z~3000) and gorge walls read in frame behind it —
-    // the gold ring still fills the view, HUD lit, the ring-burst still
-    // sparkling where the last ring was flown.
-    set(0, { x: -100, y: 100, z: 2820, heading: -0.1, pitch: 0.05, roll: -0.08, speed: 58, throttle: 0.7, fuel: 88, verticalSpeed: 2.5 });
-    game.ringIndex = 1;
-    game.score = 1000;
+    // Volcano Survey: chasing the first ring around the crater of
+    // Gunung Api — staged low and east of the cone, looking up at it:
+    // the dark lava cone and its smoke plume fill the frame behind
+    // the gold ring, HUD lit, the plane banking into the turn.
+    set(4, { x: -700, y: 180, z: 10200, heading: -1.85, pitch: 0.06, roll: -0.2, speed: 58, throttle: 0.7, fuel: 62, verticalSpeed: 2 });
+    game.ringIndex = 0;
+    game.score = 1600;
     game.combo = 1;
-    game.particles.burst(-140, 95, 3000);
-    game.say('Ring 2 of 3 — through the gold ring', '#58d68d');
+    game.elapsed = 54;
+    game.say('Volcano Survey — ring 1 of 4 around the crater', '#ffb52e');
   } else if (shot === '3-landing') {
     // The LANDED end screen at Coral Strip: all 3 rings done, the plane
     // on the runway, and the "GREASED IT" verdict card on the panel.
@@ -80,6 +80,10 @@ export function stageShot(game, shot, seed) {
     game.score = 1200;
     game.combo = 1;
     game.elapsed = 36;
+    // A lightning strike mid-flash, frozen in the shot: the bolt and
+    // the lit sky are what make the storm read as a storm.
+    game.flash = 0.5;
+    game.boltSeed = 2;
     game.say('Storm Run — ring 1 of 6 through the squall', '#ffb52e');
   } else {
     return false;

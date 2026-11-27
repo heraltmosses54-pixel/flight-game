@@ -7,6 +7,7 @@ export function makeInput(canvas) {
     pitch: 0, // -1 down, +1 up
     roll: 0, // -1 left, +1 right
     throttle: 0, // -1 idle, +1 full
+    brake: 0, // 1 while Space is held: wheel brakes / airbrake
     mouseDown: false,
     mouseX: 0,
     mouseY: 0,
@@ -53,6 +54,7 @@ export function makeInput(canvas) {
     if (keys.has('ArrowRight') || keys.has('KeyD')) roll += 1;
     if (keys.has('KeyW') || keys.has('ShiftLeft') || keys.has('ShiftRight')) throttle += 1;
     if (keys.has('KeyS') || keys.has('ControlLeft')) throttle -= 1;
+    const brake = keys.has('Space') ? 1 : 0;
     if (input.mouseDown) {
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
@@ -66,6 +68,7 @@ export function makeInput(canvas) {
     input.pitch = pitch;
     input.roll = roll;
     input.throttle = Math.max(-1, Math.min(1, throttle));
+    input.brake = brake;
   };
 
   // True once for a key pressed since the last poll; clears after reading.
