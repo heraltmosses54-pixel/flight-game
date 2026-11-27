@@ -24,7 +24,10 @@ showing airspeed, altitude, heading, fuel, damage and throttle.
    press **B** to drop a parachute crate: bullseye (within 6 m) pays 500,
    the inner band 300, the outer ring 150. Supply all three, then land at
    Far Strip.
-5. **Free Flight** — no rings, no timer. Just you and the islands.
+5. **Volcano Survey** — circle the crater of Gunung Api, the smoking
+   volcano west of Far Strip: four rings around the rim, high over the
+   lava rock, then land at Far Strip.
+6. **Free Flight** — no rings, no timer. Just you and the islands.
 
 ## How to play
 
@@ -37,15 +40,23 @@ open `game/index.html` through a local server.
   turns the plane
 - **Mouse drag** — steer with the mouse; hold and move to bank and pitch
 - **B** — drop a supply crate (Supply Run; only in the air, over a zone)
-- **1–5** — pick a mission from the menu · **Enter** — start
+- **F** — flaps down / up: slower stall and a shorter landing, at the
+  cost of top speed
+- **Space** — brakes: wheel brakes on the ground, airbrake in the air
+- **1–5** — pick a mission from the menu · **6** — free flight ·
+  **Enter** — start
+- **7–9** — buy upgrades with gold (menu only)
 - **P** — pause · **R** — restart the mission · **M** — mute · **Q** — back
   to the mission list (from an end screen) · **Esc** — menu
 
 ## Flying it well
 
 Speed is life: below about 33 m/s the wing stalls, the nose drops and the
-controls go mushy — push the nose down and add power. A banked turn bleeds
-speed, so throttle discipline matters in the Storm Run. Land slow, wings
+controls go mushy — push the nose down and add power. Flaps (**F**) buy
+you a slower stall (28 m/s) for a short-field landing, at the cost of top
+speed; **Space** brakes on the runway and works as an airbrake in the
+air. A banked turn bleeds speed, so throttle discipline matters in the
+Storm Run. Land slow, wings
 level, sinking under 4 m/s, on a strip: the sea, the hills and the trees
 are not runways. Running the tank dry kills the engine and leaves you
 gliding, so plan the landing early. On a Supply Run, drop low and slow:
@@ -59,14 +70,14 @@ Every finished flight banks gold and a rank letter, saved on this machine
 (localStorage key `skypost-career`):
 
 - **Gold** — `score / 25`, plus 50 for landing and 100 more for completing
-  the mission. Spend it on the menu with keys **6**, **7** and **8**.
+  the mission. Spend it on the menu with keys **7**, **8** and **9**.
 - **Rank** — scored against each mission's par: **S** at par, **A** at 80%
   of par, **B** at 60%, otherwise **C**. The best rank per mission is kept.
-- **Fuel Tank (6)** — +25 fuel capacity per level (100 → 125 → 150 → 175).
+- **Fuel Tank (7)** — +25 fuel capacity per level (100 → 125 → 150 → 175).
   Costs 150 / 350 / 600 gold.
-- **Climb Kit (7)** — +10% pitch response per level, so the nose answers
+- **Climb Kit (8)** — +10% pitch response per level, so the nose answers
   the stick harder. Costs 150 / 350 / 600 gold.
-- **Tough Hull (8)** — 25% less damage from each hard landing, per level.
+- **Tough Hull (9)** — 25% less damage from each hard landing, per level.
   Costs 150 / 350 / 600 gold.
 
 The menu shows your gold, flights, landings and best ranks; the end screen
@@ -76,8 +87,10 @@ shows the flight's rank, the gold it earned and your career totals.
 
 - `game/src/config.js` — constants, palette and mission definitions
 - `game/src/rng.js` — seeded random and value noise (deterministic islands)
-- `game/src/world.js` — the island chain, strips, town, lighthouse, clouds
-- `game/src/physics.js` — the flight model: lift, stall, wind, landings
+- `game/src/world.js` — the island chain, strips, town, lighthouse, clouds,
+  the Papua river gorge and the volcano Gunung Api with its smoke plume
+- `game/src/physics.js` — the flight model: lift, stall, wind, landings,
+  flaps and brakes
 - `game/src/render.js` — the pseudo-3D chase view: sky, sea, ground, rings
 - `game/src/hud.js` — tapes, gauges, attitude ball, menus and end screens
 - `game/src/game.js` — states, missions, rings, supply drops, scoring, messages
